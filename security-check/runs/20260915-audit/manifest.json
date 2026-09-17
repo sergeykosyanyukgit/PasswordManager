@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "run_id": "20260915-audit",
+  "created_at": "2026-09-15T08:23:10.154532+00:00",
+  "revision": "6adef8dcd41928ef799ee7c410c1b6ec671ccedd",
+  "scope": "electron-app",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "hashes": {
+    "AGENTS.md": "c408e6240cf97941fa7ff583908ac7d988f65e66d459e2c0e3f76d9f3203ae73",
+    "SECURITY.md": "03d93a25fb0891400c24fd3284cb854d7bf0d4601df8b0c77427fcd6c1d25b9b",
+    "docs/threat-model.md": "bbfd14ad9484dc4ce7d08101b92f4a1b7c9e45821b79f59becf4d01ee083c746",
+    "docs/vault-format.md": "be25eb7027a6469ae5232517ee5a747bd572687aef53a0239135f2d0443e6968",
+    "electron-app/package-lock.json": "9b3c0f673ec6b38b2b09440f95cad4c09b5830f778a9e8259b4cd8e22415fc11",
+    "electron-app/package.json": "57b7447c0df85b5783e9a4a7d93b4c2b87d606f53a3e27e15500e842995006a4",
+    "electron-app/scripts/build.mjs": "271ce8afc376b248731d5afec0bd2513102fba5262b88e62697697903daa56dc",
+    "electron-app/scripts/sign.ps1": "518557f140704ca81188de9f8e00d1b761d6e2705f5ffc4c0b8902a7c0b971ff",
+    "electron-app/scripts/test-terminal.mjs": "9a1e5440c5670c32bb4694f845321db00b49c4bef2b0e594b9f27195b5a68053",
+    "electron-app/src/main/main.ts": "d5c9d9915148da2586d12562dbb877e32b82239c124eec050563205c220dcd9b",
+    "electron-app/src/main/services/capture-protection.test.ts": "f655a9c1a7537b75e0e30f93c69405f2ef589a42d3df489f462a842af5e30c84",
+    "electron-app/src/main/services/capture-protection.ts": "d8f776598f6368b73744f255098e9a417d57b90515cb207de3168efcace88051",
+    "electron-app/src/main/services/hibp.ts": "fb755c9b1baa905a0aa39db76b3dbfeac5783dc7f58c0b4e5298764f21e85f57",
+    "electron-app/src/main/services/ssh-terminal.test.ts": "05725f80beeac022c44028ae0e549fe5fa1d6000a6077be7b80519b23816ab0c",
+    "electron-app/src/main/services/ssh-terminal.ts": "59d14256c2386b48b545458249f73b7bfe6a5f56ee7c33e4841c486550bf3731",
+    "electron-app/src/main/vault/codec.test.ts": "3e54f8e52116d9c10b24ad40407059343eb0457384497e5cdbf8704d814da230",
+    "electron-app/src/main/vault/codec.ts": "0fd2b6243cae5c60907f2e897cf36a6847b23ca549a38c068c3eacdf2798ad21",
+    "electron-app/src/main/vault/storage.test.ts": "c4a3a7518a93e235e45b929b3c7b6e0e5ff7957c222a40e05e5ac66a75fa4218",
+    "electron-app/src/main/vault/storage.ts": "eaeac81b0ae8a2e82a877dd48de8762cbe6f919ec8db8787908ac0a8e6ef6c9c",
+    "electron-app/src/preload/preload.ts": "b1e9e29413d98287a634fd02a588b3b136a76460c25fce8e70c0e74d4ad22579",
+    "electron-app/src/renderer/index.html": "d75847a3d4fe2699e02da24436d063603765d61a0a823d7cf5e46904f2e27de6",
+    "electron-app/src/renderer/src/App.vue": "1143de40512a2186dacd9d9b8664c9cc65c33faf1b203a62cbb916b779894604",
+    "electron-app/src/renderer/src/components/FluentIcon.vue": "389267692e7cd8a063f4bbc10d197ae502861cb3689269014d79a6682410ca01",
+    "electron-app/src/renderer/src/components/FolderTreeNode.vue": "a57611604dc353893db742767d39e14dd95d356b6fa009fdd4bab889c840eeee",
+    "electron-app/src/renderer/src/components/TerminalSession.vue": "d8df80b68442d5b3ee876b2791de09540518eecef45ffe300f1ac3ffa47910b6",
+    "electron-app/src/renderer/src/main.ts": "d84655965257e86e771cbf38fe4b6e3e53f7955b2c7937f9333e1081b2880c93",
+    "electron-app/src/renderer/src/recordDraft.test.ts": "25c5e2ee0a9f12001a8b80a7470a2981a73fe2d024677cd2f8c2eb80e181e0ce",
+    "electron-app/src/renderer/src/recordDraft.ts": "59b9bc9557ffb1798d514a5117440db75a79c632ed005bf4441aeae1e9a2bb6e",
+    "electron-app/src/renderer/src/styles.css": "90b5d19fb59dfeef1c24999ed78c45eb7948c03afa969c47dbcc139bacee1814",
+    "electron-app/src/renderer/src/terminalAppearance.test.ts": "e75b689fb1d9dc1dc5bacee3d965c1b69f16d906503884a2cb4fd28cdeef7832",
+    "electron-app/src/renderer/src/terminalAppearance.ts": "e157f51656e5283862b139cb454e950c2c9d7ff26b89f4692bedae4fbc40369f",
+    "electron-app/src/shared/content-security-policy.ts": "845af0e949c226abcca5cf56d139cb46772d2943cbdd430eaa3b63f21defe612",
+    "electron-app/src/shared/contracts.ts": "1a62ce534974b923223b98d1d5449c5c41c038aab61e09abb3372fe5c80a6232",
+    "electron-app/tests/terminal-renderer/fixture.ts": "11df646962d5faa8fba8ce928ab7267c11b976c742e663a1f7d58876c5288085",
+    "electron-app/tests/terminal-renderer/index.html": "6bfda694adf029ff673a01003182d1a24f31af5cffaa73bc1a6e299ecb6ed2fb",
+    "electron-app/tests/terminal-renderer/main.cjs": "5d06e045995806072f9802bd756065fe0930771280c030d3b2807112f188bbbe",
+    "electron-app/tsconfig.json": "c34ca3383bb7094b19ba62554b790d369586492e0528b5c4c31b94d4f9f278d7",
+    "electron-app/tsconfig.node.json": "57acc6e4b7f560b8d2916149bb08cb87544dcad686f830ee3bb48c2baf8c9966",
+    "electron-app/vite.config.ts": "0541046580cd0e9174a193c41072873b42211dbe60278985347ffcb5eae2fc71",
+    "electron-app/vitest.config.ts": "89c387f15326740a74f73bb55491d951a0bb80e2d1f08e1f4b7d8db8755010f2",
+    "security-check/modules.json": "f12be67af0547eeb593a1f1f3ca30d9a0359d8de61b6f857a0c44f6a9e684c27"
+  },
+  "modules": [
+    {
+      "id": "vault-codec",
+      "paths": [
+        "electron-app/src/main/vault/codec*.ts",
+        "electron-app/src/shared/contracts.ts"
+      ],
+      "focus": "Vault format, Argon2id, HKDF, AES-GCM, AAD, key disposal, bounds and document validation. Independently map architecture and trace consumers; preserve the supplied threat model.",
+      "files": [
+        "electron-app/src/main/vault/codec.test.ts",
+        "electron-app/src/main/vault/codec.ts",
+        "electron-app/src/shared/contracts.ts"
+      ]
+    },
+    {
+      "id": "vault-storage",
+      "paths": [
+        "electron-app/src/main/vault/storage*.ts"
+      ],
+      "focus": "Encrypted atomic save, authenticated reread, writer locks, source conflicts, hostile local/SMB metadata, session lifecycle and cleanup.",
+      "files": [
+        "electron-app/src/main/vault/storage.test.ts",
+        "electron-app/src/main/vault/storage.ts"
+      ]
+    },
+    {
+      "id": "electron-boundary",
+      "paths": [
+        "electron-app/src/main/main.ts",
+        "electron-app/src/preload/*.ts",
+        "electron-app/src/shared/content-security-policy.ts",
+        "electron-app/src/main/services/capture-protection*.ts"
+      ],
+      "focus": "Untrusted renderer, IPC sender and payload validation, protocol/CSP, navigation, capture gate, clipboard, auto-lock and shutdown. Independently map the actual architecture and trust boundaries.",
+      "files": [
+        "electron-app/src/main/main.ts",
+        "electron-app/src/main/services/capture-protection.test.ts",
+        "electron-app/src/main/services/capture-protection.ts",
+        "electron-app/src/preload/preload.ts",
+        "electron-app/src/shared/content-security-policy.ts"
+      ]
+    },
+    {
+      "id": "ssh-terminal",
+      "paths": [
+        "electron-app/src/main/services/ssh-terminal*.ts"
+      ],
+      "focus": "SSH destinations, algorithm allowlists, TOFU and changed-key rejection, credentials, terminal data bounds, session ownership and cleanup.",
+      "files": [
+        "electron-app/src/main/services/ssh-terminal.test.ts",
+        "electron-app/src/main/services/ssh-terminal.ts"
+      ]
+    },
+    {
+      "id": "hibp",
+      "paths": [
+        "electron-app/src/main/services/hibp.ts"
+      ],
+      "focus": "Explicit consent at callers, prefix-only padded HIBP request, redirects, response limits, timeouts, logging, indeterminate failures.",
+      "files": [
+        "electron-app/src/main/services/hibp.ts"
+      ]
+    },
+    {
+      "id": "renderer",
+      "paths": [
+        "electron-app/src/renderer/**",
+        "electron-app/tests/**"
+      ],
+      "focus": "Vue secret lifecycle, auto-lock, trusted confirmation boundaries, record mutations, DOM injection, embedded xterm, OSC-52, clipboard and URLs.",
+      "files": [
+        "electron-app/src/renderer/index.html",
+        "electron-app/src/renderer/src/App.vue",
+        "electron-app/src/renderer/src/components/FluentIcon.vue",
+        "electron-app/src/renderer/src/components/FolderTreeNode.vue",
+        "electron-app/src/renderer/src/components/TerminalSession.vue",
+        "electron-app/src/renderer/src/main.ts",
+        "electron-app/src/renderer/src/recordDraft.test.ts",
+        "electron-app/src/renderer/src/recordDraft.ts",
+        "electron-app/src/renderer/src/styles.css",
+        "electron-app/src/renderer/src/terminalAppearance.test.ts",
+        "electron-app/src/renderer/src/terminalAppearance.ts",
+        "electron-app/tests/terminal-renderer/fixture.ts",
+        "electron-app/tests/terminal-renderer/index.html",
+        "electron-app/tests/terminal-renderer/main.cjs"
+      ]
+    },
+    {
+      "id": "build-release",
+      "paths": [
+        "electron-app/package*.json",
+        "electron-app/*config*.ts",
+        "electron-app/tsconfig*.json",
+        "electron-app/scripts/**"
+      ],
+      "focus": "Pinned dependencies, packaging inputs, signing and signature verification, diagnostic/release separation, compiled security controls and test-only surfaces. Static review only; do not infer current CVEs from memory.",
+      "files": [
+        "electron-app/package-lock.json",
+        "electron-app/package.json",
+        "electron-app/scripts/build.mjs",
+        "electron-app/scripts/sign.ps1",
+        "electron-app/scripts/test-terminal.mjs",
+        "electron-app/tsconfig.json",
+        "electron-app/tsconfig.node.json",
+        "electron-app/vite.config.ts",
+        "electron-app/vitest.config.ts"
+      ]
+    }
+  ],
+  "excluded_files": [
+    "electron-app/build/icon.ico",
+    "electron-app/src/renderer/assets/passwordmanager-strict.png"
+  ],
+  "excluded_directories": [
+    "node_modules",
+    "dist",
+    "release",
+    "artifacts",
+    ".runtime-probe"
+  ],
+  "context": [
+    "AGENTS.md",
+    "SECURITY.md",
+    "docs/threat-model.md",
+    "docs/vault-format.md"
+  ]
+}

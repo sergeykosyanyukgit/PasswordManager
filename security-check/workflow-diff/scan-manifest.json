@@ -1,0 +1,70 @@
+{
+  "documentType": "codex-security.scan-manifest",
+  "scan": {
+    "artifacts": [
+      {
+        "mediaType": "application/json",
+        "path": "findings.json",
+        "sha256": "fafcd97b9ade3d3f098614cbe579ed1c472dd2b1353f0f6aade49f21c872be82"
+      },
+      {
+        "mediaType": "application/json",
+        "path": "coverage.json",
+        "sha256": "3f7d51a5c673ac76793d1f55174a6b574731e32d02eec11bc29e2561a14ea0c8"
+      }
+    ],
+    "completedAt": "2026-09-15T08:39:24.629917+00:00",
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json",
+    "id": "passwordmanager-workflow-diff-20260915",
+    "producer": {
+      "name": "codex-security-plugin",
+      "version": "0.1.24"
+    },
+    "scope": {
+      "artifactsReviewed": [
+        "scripts/security-check.ps1",
+        "scripts/security-check.py",
+        "scripts/test_security_check.py",
+        "security-check/modules.json",
+        "docs/security-check-workflow.md",
+        ".gitignore"
+      ],
+      "context": "Supplied project threat model retained verbatim. Developer tooling consumes untrusted model JSON; the local account and Codex host are trusted. One native parent review of every changed workflow source; no extra module agent.",
+      "excludePaths": [
+        "electron-app",
+        "security-check/runs"
+      ],
+      "includePaths": [
+        "scripts/security-check.ps1",
+        "scripts/security-check.py",
+        "scripts/test_security_check.py",
+        "security-check/modules.json",
+        "docs/security-check-workflow.md",
+        ".gitignore"
+      ],
+      "limitations": [
+        "No exploit execution or new release; model isolation is context separation, not a VM.",
+        "Prompt instructions forbid network/apps; read-only shell sandbox does not independently prove app-tool network denial."
+      ],
+      "runtimeStatus": "15 tests passed; PowerShell syntax parsed. Current actual audit used seven isolated native module agents; standalone full CLI model run not repeated.",
+      "summary": "Security diff review of the six files added or extended by this task; immutable workflow.patch. Existing application changes audited separately.",
+      "validationMode": "offline static diff review plus 15 regression tests"
+    },
+    "sealedAt": "2026-09-15T08:39:24.629917+00:00",
+    "startedAt": "2026-09-15T08:26:30Z",
+    "status": "completed",
+    "target": {
+      "baseRevision": "6adef8dcd41928ef799ee7c410c1b6ec671ccedd",
+      "displayName": "PasswordManager security workflow patch",
+      "headRevision": "working-tree",
+      "kind": "git_diff",
+      "snapshotDigest": "codex-security-snapshot/v1:sha256:ec9e2247e3a99c02e6f1cb1587c39dd65f13d7fe790d639058fca6a884468d2d",
+      "targetId": "target_sha256_db09c38aabe06c89e0cccc44a3d1d3d6125310e49adf077d3a679bf0ef5b3afe"
+    },
+    "threatModel": {
+      "summary": "# PasswordManager v1 threat model\n\n## Assets and actors\n\nThe primary user is the signed-in Windows account owner. Relevant attackers are: a thief with a copied locked vault; a party controlling a network share or modifying vault bytes; a party observing HIBP/SSH traffic; a malicious or changed SSH endpoint; another local process under a different Windows account; and an attacker who compromises the release channel. The Windows kernel/account, unlocked process, and trusted release worker are privileged dependencies rather than adversarial isolation boundaries.\n\n## Data flow and boundaries\n\n1. A master password crosses the UI/process boundary and is immediately normalized and processed by Argon2id. The root-key buffer remains only in the main process and is zeroed on disposal; JavaScript cannot guarantee locked/non-pageable memory.\n2. Untrusted vault bytes cross the filesystem/parser boundary. Fixed bounds are checked before KDF memory allocation or ciphertext allocation; authenticated decryption precedes JSON parsing.\n3. A completed password may cross the HTTPS boundary only after per-vault consent. Only its five-character SHA-1 prefix is sent with response padding enabled.\n4. The renderer requests SSH by vault-session and record identifiers only. The Electron main process reads the destination and credentials from its main-owned vault copy, requires a native confirmation before network access, and supplies credentials directly from memory to `ssh2`. The server host key must match a main-owned SHA-256 fingerprint, or first use must be explicitly confirmed in another native dialog.\n5. Terminal bytes cross a bounded IPC event boundary to embedded xterm.js in the already sandboxed application renderer. CSP permits inline CSS required by xterm's generated cell, cursor, selection and truecolor styles, but blocks inline scripts, remote scripts/styles and renderer network connections. Terminal bytes are never inserted as HTML. Navigation/download blocking, disabled packaged DevTools, absence of link/host-object integration, and OSC-52 filtering restrict terminal capabilities. The main-process response header and built HTML share one policy definition.\n6. A secret copied by the user crosses the Windows clipboard boundary with conditional timed clearing. Windows clipboard-history and roaming suppression is not yet implemented in this development build.\n7. Release signing crosses a separate build boundary. The certificate path/password exist only as environment values and the produced executable is verified after signing.\n\n## High-priority scenarios and controls\n\n- Offline guessing: Argon2id raises cost; a 15-character minimum and local strength feedback reduce weak choices. There is intentionally no recovery path.\n- Vault tampering/mix-and-match: independent GCM authentication plus AAD-bound VaultId/header fields rejects changes, truncation, cross-vault key material, and mixed saves.\n- Resource exhaustion: file, header, ciphertext, JSON, KDF, response, message, and folder-depth limits are enforced before allocation or recursive traversal.\n- Lost update/ransomware-style replacement: an exclusive sibling lock and source digest check reject concurrent change. Network reconnection revalidates both; overwrite is never automatic.\n- Password privacy leak: no incremental request, full hash, suffix, password, redirect, or log; padded range query only. Network failure stays indeterminate.\n- SSH interception/downgrade: modern allowlist by default, TOFU fingerprint confirmation, changed-key hard failure, and no external process or key file. A per-record legacy mode adds a bounded Group1/SHA-1, DSA, 3DES/AES-CBC, old-MAC, and zlib-compression compatibility set only after explicit UI activation and a native warning on every connection; it never permits RC4, Blowfish, or CAST.\n- UI capture: ordinary builds verify Windows content protection before any secret-bearing top-level window is usable. Failure blocks unlock and SSH. Explicitly requested screenshot diagnostic builds compile `PM_SCREENSHOT_DIAGNOSTICS=1`, allow capture, and display a persistent diagnostic badge; they are excluded from release distribution. Runtime environment, IPC, and vault data cannot enable this exception in ordinary builds.\n- Second-instance path injection: Electron's single-instance channel accepts only bounded, canonicalized existing `.pmvault` paths before forwarding them to the trusted renderer.\n- Terminal renderer escape: local embedded assets only, restrictive CSP, bounded validated IPC, blocked navigation/download/new-window/host objects, no link provider, and consumed OSC-52 sequences.\n\n## Residual risks\n\nValid historical vault rollback cannot be distinguished after a fresh process without an external trusted counter. SSD wear leveling prevents a physical-erasure promise. A Windows administrator, malware, debugging, unlocked-memory capture, keylogging, camera, hardware capture, malicious runtime, or compromised signing environment can defeat guarantees. Availability is not protected against file deletion or network outage.\n\nRepository: PasswordManager\nVersion: working-tree\n"
+    }
+  },
+  "schemaVersion": "1.0"
+}

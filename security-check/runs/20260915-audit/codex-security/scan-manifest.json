@@ -1,0 +1,105 @@
+{
+  "documentType": "codex-security.scan-manifest",
+  "scan": {
+    "artifacts": [
+      {
+        "mediaType": "application/json",
+        "path": "findings.json",
+        "sha256": "e83d05c59535c2478199b244df8521163616f9e575d0f7df81831c3354431cc1"
+      },
+      {
+        "mediaType": "application/json",
+        "path": "coverage.json",
+        "sha256": "049525168f52451ac411ab2b98e919c98cd90db486b8a3f8fbd58d4123bea32c"
+      }
+    ],
+    "completedAt": "2026-09-15T08:40:27.988399Z",
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json",
+    "id": "454f6a13-6ada-4a03-9199-fbfe003cfcf5",
+    "preservedSources": {
+      "checkpoints/0ee879e987c7605aea78ad079a8d598b658ab713e9f2020e1fe3720acede9568.json": "5e3ab6511f52112d1f23eaae1033093236b758a1be7ef2412d726599f22a0572",
+      "checkpoints/118cfb6352862975b6d274b3b7a362ce4245cfdeae1b28be34c6435ffed2e6ce.json": "f7122e192988fcf9a4476024668551c952cec9aa96b31fa8b8ca5ce47dedb5ce",
+      "checkpoints/23d6e8472bce757dbd97897267ca2e8cbde498cf73c7f195a2c45fbdb00e8010.json": "7253cd7843a34cd22c0684170fa71afb6cf87bc4634a3dd60e1667d495be2bc4",
+      "checkpoints/378e959c5d5a3452b387da5d458bbdbb141b2ecd193a9b556d17c65d779462cb.json": "21f49999dc5a4bc09c68b75178315755f19663b4d896644b9490a60ea0e8952a",
+      "checkpoints/3c3b4d594185c578a2eafcbd28acfbcd5920fad7c1d349e443e57e09b5976fb9.json": "2611afe719ce2f1306aa8ad04da559ccbb68f3b0de2080fb84b15a5889dbcf10",
+      "checkpoints/765e49619b82f85fb5e4290edb0920992edfc183007c8f0cd12d3d3ade53e640.json": "65a154a9a8ba0447a04bca53dbbf70b66884e47067d0513c241796bd87fc81e1",
+      "checkpoints/9632b6cf8c6a0e17afcffd5a4d527306b376e0fb92d8671debb65323013c8aeb.json": "9632b6cf8c6a0e17afcffd5a4d527306b376e0fb92d8671debb65323013c8aeb",
+      "checkpoints/bd69ff3bdf02418beb070d7140ddc5b2801a7c7db8e9947d7fdf755982971176.json": "9701807ff117c27b400ca5ed59f43cfd9405989999de4109c934877cc1225984",
+      "checkpoints/c057ec94ffd777eced5cf214c395e48427354df76156117a23fce9b71ddc6a4a.json": "99d58bad397835285ca4cba7ba14b038650a292447b3a382dca40b85d22db57c",
+      "checkpoints/ebda70862cd8d5f13595482296f10628941951406377a85dc790f52f0474aa3e.json": "4381de4f256d2c98379e368960f057a86b9849fea745a9ec0d22950fa8cbc6c7"
+    },
+    "producer": {
+      "name": "codex-security-plugin",
+      "version": "0.1.24"
+    },
+    "scope": {
+      "artifactsReviewed": [
+        "electron-app/src/main/vault/codec.test.ts",
+        "electron-app/src/main/vault/codec.ts",
+        "electron-app/src/shared/contracts.ts",
+        "electron-app/src/main/vault/storage.test.ts",
+        "electron-app/src/main/vault/storage.ts",
+        "electron-app/src/main/main.ts",
+        "electron-app/src/main/services/capture-protection.test.ts",
+        "electron-app/src/main/services/capture-protection.ts",
+        "electron-app/src/preload/preload.ts",
+        "electron-app/src/shared/content-security-policy.ts",
+        "electron-app/src/main/services/ssh-terminal.test.ts",
+        "electron-app/src/main/services/ssh-terminal.ts",
+        "electron-app/src/main/services/hibp.ts",
+        "electron-app/src/renderer/index.html",
+        "electron-app/src/renderer/src/App.vue",
+        "electron-app/src/renderer/src/components/FluentIcon.vue",
+        "electron-app/src/renderer/src/components/FolderTreeNode.vue",
+        "electron-app/src/renderer/src/components/TerminalSession.vue",
+        "electron-app/src/renderer/src/main.ts",
+        "electron-app/src/renderer/src/recordDraft.test.ts",
+        "electron-app/src/renderer/src/recordDraft.ts",
+        "electron-app/src/renderer/src/styles.css",
+        "electron-app/src/renderer/src/terminalAppearance.test.ts",
+        "electron-app/src/renderer/src/terminalAppearance.ts",
+        "electron-app/tests/terminal-renderer/fixture.ts",
+        "electron-app/tests/terminal-renderer/index.html",
+        "electron-app/tests/terminal-renderer/main.cjs",
+        "electron-app/package-lock.json",
+        "electron-app/package.json",
+        "electron-app/scripts/build.mjs",
+        "electron-app/scripts/sign.ps1",
+        "electron-app/scripts/test-terminal.mjs",
+        "electron-app/tsconfig.json",
+        "electron-app/tsconfig.node.json",
+        "electron-app/vite.config.ts",
+        "electron-app/vitest.config.ts"
+      ],
+      "context": "User requested exactly one independent agent per module and security_check_result.md. docs/threat-model.md retained verbatim as supplied project security context. Native module agents had fork_turns=none; no model substitution.",
+      "excludePaths": [],
+      "includePaths": [
+        "electron-app"
+      ],
+      "limitations": [
+        "One static modular pass; not the required pre-v1 Deep Scan.",
+        "Token measurement may be unavailable for native module workers.",
+        "Existing unrelated user changes were preserved.",
+        "Source scope excludes legacy WPF and generated/binary assets; supporting dependency reads are not counted as full coverage."
+      ],
+      "runtimeStatus": "npm ci/typecheck/build succeeded; 49/49 tests passed; npm audit and npm audit --omit=dev found 0 vulnerabilities. No exploit execution, release packaging or signing.",
+      "summary": "36 active Electron source/config/test files reviewed by seven fresh-context module agents; parent validates each unique candidate and merges duplicate control failures.",
+      "validationMode": "offline static analysis, independent parent validation, source-hash and line-bound checks"
+    },
+    "sealedAt": "2026-09-15T08:40:27.988399Z",
+    "startedAt": "2026-09-15T08:20:33.516669Z",
+    "status": "completed",
+    "target": {
+      "displayName": "PasswordManager",
+      "kind": "git_worktree",
+      "revision": "6adef8dcd41928ef799ee7c410c1b6ec671ccedd",
+      "snapshotDigest": "codex-security-snapshot/v1:sha256:f30ed2bc3f8b477cdfd6093b45fdf9247b437c2fe252a1994272edbb7899ffef",
+      "targetId": "target_sha256_afa278ad7b2b8e83eac78b36ef31537f9046bab7e159eea5491252c1db9bc24b"
+    },
+    "threatModel": {
+      "summary": "# PasswordManager v1 threat model\n\n## Assets and actors\n\nThe primary user is the signed-in Windows account owner. Relevant attackers are: a thief with a copied locked vault; a party controlling a network share or modifying vault bytes; a party observing HIBP/SSH traffic; a malicious or changed SSH endpoint; another local process under a different Windows account; and an attacker who compromises the release channel. The Windows kernel/account, unlocked process, and trusted release worker are privileged dependencies rather than adversarial isolation boundaries.\n\n## Data flow and boundaries\n\n1. A master password crosses the UI/process boundary and is immediately normalized and processed by Argon2id. The root-key buffer remains only in the main process and is zeroed on disposal; JavaScript cannot guarantee locked/non-pageable memory.\n2. Untrusted vault bytes cross the filesystem/parser boundary. Fixed bounds are checked before KDF memory allocation or ciphertext allocation; authenticated decryption precedes JSON parsing.\n3. A completed password may cross the HTTPS boundary only after per-vault consent. Only its five-character SHA-1 prefix is sent with response padding enabled.\n4. The renderer requests SSH by vault-session and record identifiers only. The Electron main process reads the destination and credentials from its main-owned vault copy, requires a native confirmation before network access, and supplies credentials directly from memory to `ssh2`. The server host key must match a main-owned SHA-256 fingerprint, or first use must be explicitly confirmed in another native dialog.\n5. Terminal bytes cross a bounded IPC event boundary to embedded xterm.js in the already sandboxed application renderer. CSP permits inline CSS required by xterm's generated cell, cursor, selection and truecolor styles, but blocks inline scripts, remote scripts/styles and renderer network connections. Terminal bytes are never inserted as HTML. Navigation/download blocking, disabled packaged DevTools, absence of link/host-object integration, and OSC-52 filtering restrict terminal capabilities. The main-process response header and built HTML share one policy definition.\n6. A secret copied by the user crosses the Windows clipboard boundary with conditional timed clearing. Windows clipboard-history and roaming suppression is not yet implemented in this development build.\n7. Release signing crosses a separate build boundary. The certificate path/password exist only as environment values and the produced executable is verified after signing.\n\n## High-priority scenarios and controls\n\n- Offline guessing: Argon2id raises cost; a 15-character minimum and local strength feedback reduce weak choices. There is intentionally no recovery path.\n- Vault tampering/mix-and-match: independent GCM authentication plus AAD-bound VaultId/header fields rejects changes, truncation, cross-vault key material, and mixed saves.\n- Resource exhaustion: file, header, ciphertext, JSON, KDF, response, message, and folder-depth limits are enforced before allocation or recursive traversal.\n- Lost update/ransomware-style replacement: an exclusive sibling lock and source digest check reject concurrent change. Network reconnection revalidates both; overwrite is never automatic.\n- Password privacy leak: no incremental request, full hash, suffix, password, redirect, or log; padded range query only. Network failure stays indeterminate.\n- SSH interception/downgrade: modern allowlist by default, TOFU fingerprint confirmation, changed-key hard failure, and no external process or key file. A per-record legacy mode adds a bounded Group1/SHA-1, DSA, 3DES/AES-CBC, old-MAC, and zlib-compression compatibility set only after explicit UI activation and a native warning on every connection; it never permits RC4, Blowfish, or CAST.\n- UI capture: ordinary builds verify Windows content protection before any secret-bearing top-level window is usable. Failure blocks unlock and SSH. Explicitly requested screenshot diagnostic builds compile `PM_SCREENSHOT_DIAGNOSTICS=1`, allow capture, and display a persistent diagnostic badge; they are excluded from release distribution. Runtime environment, IPC, and vault data cannot enable this exception in ordinary builds.\n- Second-instance path injection: Electron's single-instance channel accepts only bounded, canonicalized existing `.pmvault` paths before forwarding them to the trusted renderer.\n- Terminal renderer escape: local embedded assets only, restrictive CSP, bounded validated IPC, blocked navigation/download/new-window/host objects, no link provider, and consumed OSC-52 sequences.\n\n## Residual risks\n\nValid historical vault rollback cannot be distinguished after a fresh process without an external trusted counter. SSD wear leveling prevents a physical-erasure promise. A Windows administrator, malware, debugging, unlocked-memory capture, keylogging, camera, hardware capture, malicious runtime, or compromised signing environment can defeat guarantees. Availability is not protected against file deletion or network outage.\n\nRepository: PasswordManager\nVersion: working-tree\n"
+    }
+  },
+  "schemaVersion": "1.0"
+}

@@ -53,6 +53,10 @@ The decrypted payload is:
 
 At least one 4096-byte block is emitted. Padding bytes have no structure and are ignored only after the authenticated `JsonLength` has been bounded. Folder depth is limited to 64 and all names and settings live inside JSON ciphertext.
 
+`settings.autoLockMinutes` is an authenticated integer in the inclusive range 0-240. `0` disables inactivity auto-lock for that vault; it does not disable locking on Windows lock, suspend, shutdown, explicit close, or application exit. Older v1 payloads remain compatible because their existing positive value retains the same meaning.
+
+SSH profile payloads include `allowLegacyAlgorithms`, a boolean that defaults to `false`. Readers treat the missing field in an older authenticated v1 payload as `false`, so this additive payload migration preserves v1 binary/AAD compatibility. Non-boolean values are rejected. Enabling the flag is per record and still requires a native warning before every compatibility-mode connection.
+
 ## Saving and migration
 
 The application serializes in memory, encrypts a same-directory uniquely named temp file, opens it with exclusive sharing, flushes with write-through, rereads and authenticates it, rechecks the SHA-256 hash of the source version, and uses an atomic filesystem replacement. No backup is created. Unsupported replacement leaves the original untouched and requires Save As.

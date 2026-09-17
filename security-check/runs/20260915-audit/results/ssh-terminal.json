@@ -1,0 +1,153 @@
+{
+  "module_id": "ssh-terminal",
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "status": "complete",
+  "summary": "Оба назначенных файла полностью прочитаны; проверены вызывающий main-процесс, потребитель терминальных событий и соответствующие участки установленного ssh2/xterm. Подтверждённых уязвимостей в заявленной модели угроз не установлено. Обнаруженные пробелы отмены незавершённых подключений, управления потоком и очистки обработчиков сохранены отдельно от уязвимостей. Проверка границ параметров DH group exchange в криптографическом runtime остаётся открытым вопросом.",
+  "fully_reviewed_files": [
+    "electron-app/src/main/services/ssh-terminal.test.ts",
+    "electron-app/src/main/services/ssh-terminal.ts"
+  ],
+  "findings": [],
+  "resolved_questions": [
+    {
+      "question": "Может ли входящий запрос произвольно подменить SSH-адрес или передать параметры запуска внешней команды?",
+      "disposition": "В проверенном пути запрос содержит только идентификаторы сейфа/записи/терминала и размеры. Main получает отдельную копию профиля из открытого сейфа, показывает нативное подтверждение и повторно сравнивает адрес, пользователя, тип аутентификации, fingerprint и режим совместимости после подтверждения. Модуль проверяет форму и пределы профиля, затем передаёт host/port/username прямо в ssh2; shell открывается с фиксированным типом терминала. Пути запуска дочернего процесса или сохранения ключа в файл здесь нет.",
+      "evidence": [
+        { "path": "electron-app/src/main/main.ts", "start_line": 188, "end_line": 203, "fact": "Строгий IPC-запрос содержит идентификаторы и размеры; профиль читается из store до и после нативного подтверждения." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 228, "end_line": 229, "fact": "sameSshTarget сравнивает адрес, порт, пользователя, тип аутентификации, fingerprint и allowLegacyAlgorithms." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 246, "end_line": 258, "fact": "Нативный диалог показывает пользователя, адрес, порт и закреплённый fingerprint; действие по умолчанию — отмена." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 123, "end_line": 126, "fact": "SSH-профиль возвращается через structuredClone только для существующей неудалённой SSH-записи открытой сессии." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 36, "end_line": 59, "fact": "Строгие схемы ограничивают host, port, username, секретные поля, fingerprint, UUID и размеры; управляющие символы host/username запрещены." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 131, "end_line": 132, "fact": "Создаётся встроенный SSH shell с фиксированным term=xterm-256color и проверенными размерами." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 168, "end_line": 194, "fact": "Адрес и учётные данные передаются Client.connect в памяти; конфигурация не содержит команды, файла ключа, агента или внешнего терминала." }
+      ]
+    },
+    {
+      "question": "Можно ли автоматически согласовать запрещённые устаревшие алгоритмы?",
+      "disposition": "Современный и совместимый наборы заданы явными массивами; автоматического перехода к совместимости нет. RC4, Blowfish и CAST отсутствуют в обоих наборах. Совместимость выбирается сохранённым флагом и сопровождается отдельным нативным предупреждением перед подключением. Пароли не используются для других методов, кроме password/keyboard-interactive; закрытые ключи ограничены Ed25519/ECDSA, поэтому RSA user authentication с возможным SHA-1 fallback отклоняется. Это подтверждает политику имён алгоритмов; вопрос фактических параметров DH рассмотрен отдельно.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 17, "end_line": 34, "fact": "Определены два явных набора kex/cipher/serverHostKey/hmac/compress; запрещённые RC4, Blowfish и CAST в них не включены." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 176, "end_line": 178, "fact": "Набор выбирается только по allowLegacyAlgorithms, authHandler явно ограничен password/keyboard-interactive либо publickey." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 186, "end_line": 194, "fact": "Проверка типа закрытого ключа предшествует connect; ошибка завершает запрос без fallback." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 230, "end_line": 234, "fact": "assertModernPrivateKey допускает только приватные ключи Ed25519 и перечисленные ECDSA-типы." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 196, "end_line": 201, "fact": "Совместимый профиль требует нативного предупреждения и повторной проверки профиля перед подключением." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 232, "end_line": 243, "fact": "Предупреждение перечисляет разрешённые устаревшие алгоритмы, имеет отмену по умолчанию и вызывается для каждого совместимого подключения." },
+        { "path": "electron-app/src/renderer/src/App.vue", "start_line": 324, "end_line": 330, "fact": "Обычный UI требует отдельного явного подтверждения перед установкой флага совместимости." },
+        { "path": "electron-app/src/main/services/ssh-terminal.test.ts", "start_line": 17, "end_line": 30, "fact": "Тесты проверяют современный/совместимый наборы и отклонение RSA private key." },
+        { "path": "electron-app/src/main/services/ssh-terminal.test.ts", "start_line": 151, "end_line": 198, "fact": "Синтетический сервер Group1/3DES/ssh-rsa/MD5/zlib используется для теста отказа современного режима и успеха явно включённой совместимости." }
+      ]
+    },
+    {
+      "question": "Можно ли отправить пароль до проверки host key либо обойти изменившийся закреплённый ключ через TOFU?",
+      "disposition": "В проверенном пути нет: verifier возвращает true только при непустом ожидаемом SHA-256 fingerprint и точном совпадении. Неизвестный ключ отклоняется на первой попытке; main предлагает нативное подтверждение, сохраняет fingerprint и перепроверяет профиль перед повтором. Изменившийся ключ возвращает hostKeyMismatch и не попадает в ветку TOFU. Дополнительно ssh2 проверяет подпись обмена, поэтому одного предъявления публичного ключа недостаточно для успешного подключения. Отдельного интеграционного теста mismatch в назначенном файле нет; вывод основан на статическом пути, а не заявленном запуске тестов.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 115, "end_line": 117, "fact": "Ожидаемый fingerprint фиксируется из профиля при создании попытки подключения." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 150, "end_line": 154, "fact": "Неизвестный fingerprint и несовпадение уже закреплённого fingerprint возвращают разные статусы." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 179, "end_line": 184, "fact": "Host verifier принимает только точное совпадение с непустым ожидаемым fingerprint." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 226, "end_line": 227, "fact": "Fingerprint вычисляется SHA-256 по байтам host key и кодируется base64 без padding." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 204, "end_line": 225, "fact": "Только hostKeyRequired вызывает TOFU; перед сохранением и повтором проверяется актуальный профиль, mismatch возвращается без перепривязки." },
+        { "path": "electron-app/node_modules/ssh2/lib/client.js", "start_line": 281, "end_line": 287, "fact": "ssh2 передаёт возвращённое приложением логическое значение в проверку host key." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 1200, "end_line": 1213, "fact": "Отказ host verifier приводит к фатальной ошибке key exchange." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 688, "end_line": 714, "fact": "Подпись exchange hash проверяется host public key с SHA-2 для RSA-SHA2; неверная подпись завершает handshake." },
+        { "path": "electron-app/src/main/services/ssh-terminal.test.ts", "start_line": 88, "end_line": 100, "fact": "Синтетический тест проверяет первый отказ TOFU и успешный shell после явного закрепления fingerprint." }
+      ]
+    },
+    {
+      "question": "Раскрывают ли обработчики аутентификации или ошибок секреты через UI и сообщения?",
+      "disposition": "Обработчик keyboard-interactive отправляет пароль только один раз и только на единственный скрытый prompt; остальные запросы получают пустой ответ. Обычные сетевые ошибки сводятся к фиксированным категориям. Локальный Buffer PEM обнуляется при settle, строки профиля заменяются пустыми. Это не доказывает стирание всех копий внутри ssh2/V8 и не устраняет удержание данных при незавершённом shell; такие гарантии не приписываются реализации.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 120, "end_line": 128, "fact": "settle обнуляет созданный модулем privateKey Buffer и очищает строковые поля копии профиля." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 160, "end_line": 165, "fact": "Пароль передаётся максимум в один одиночный prompt с echo=false." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 237, "end_line": 257, "fact": "classifyConnectionFailure возвращает фиксированную категорию вместо исходного текста сетевой ошибки." },
+        { "path": "electron-app/src/main/services/ssh-terminal.test.ts", "start_line": 33, "end_line": 49, "fact": "Тесты перечисляют ожидаемую классификацию синтетических ошибок." },
+        { "path": "electron-app/src/main/services/ssh-terminal.test.ts", "start_line": 103, "end_line": 148, "fact": "Есть положительный синтетический тест единственного скрытого keyboard-interactive prompt." },
+        { "path": "AGENTS.md", "start_line": 41, "end_line": 41, "fact": "Политика прямо признаёт невозможность гарантированного стирания строк JavaScript и копий V8." }
+      ]
+    },
+    {
+      "question": "Закрываются ли попытки подключения при блокировке сейфа или закрытии вкладки?",
+      "disposition": "Подтверждён пробел жизненного цикла, отдельно от доказанной уязвимости: sessions содержит клиент только после успешного открытия shell; close/closeAll/closeByVault обходят лишь этот Map. Поэтому pending handshake или shell не отменяется закрытием вкладки/сейфа. readyTimeout заканчивается после USERAUTH_SUCCESS, а отдельного срока ожидания shell нет; отвечающий на keepalive сервер может удерживать попытку. Сильное контрдоказательство против постоянного живого терминала после позднего успеха: размонтированный renderer повторно закрывает терминал при результате connected. Сохранение сетевой попытки и её копий данных подтверждено, но доступ иного атакующего к секретам не установлен; сбор дампов и availability прямо ограничены моделью. Нужны регистрация pending-клиента до сети, отмена по terminalId/vaultSessionId, срок ожидания shell и проверка отмены перед публикацией успешной сессии.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 79, "end_line": 83, "fact": "start проверяет только уже зарегистрированный terminalId и затем начинает connect." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 98, "end_line": 110, "fact": "closeAll/closeByVault обходят только sessions; close вызывает finish по идентификатору." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 112, "end_line": 146, "fact": "Клиент и секретная копия существуют до shell callback; запись в sessions появляется лишь после успешного callback." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 168, "end_line": 174, "fact": "Заданы readyTimeout=15000 и keepalive, отдельный shell timeout отсутствует в конфигурации." },
+        { "path": "electron-app/node_modules/ssh2/lib/client.js", "start_line": 364, "end_line": 370, "fact": "ssh2 сбрасывает readyTimeout при USERAUTH_SUCCESS до вызова обработчика ready приложения." },
+        { "path": "electron-app/node_modules/ssh2/lib/client.js", "start_line": 1826, "end_line": 1841, "fact": "Shell ожидает ответа в очереди callback без самостоятельного таймера на этом пути." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 270, "end_line": 274, "fact": "Глобальная блокировка закрывает известные терминалы, затем vault store и уведомляет renderer." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 281, "end_line": 287, "fact": "Автоблокировка по сейфу вызывает closeByVault и закрывает store с уведомлением renderer." },
+        { "path": "electron-app/src/renderer/src/components/TerminalSession.vue", "start_line": 126, "end_line": 138, "fact": "Размонтирование ставит disposed, удаляет подписки и запрашивает закрытие terminalId." },
+        { "path": "electron-app/src/renderer/src/components/TerminalSession.vue", "start_line": 162, "end_line": 168, "fact": "Поздний connected для disposed-компонента вызывает повторное закрытие терминала." },
+        { "path": "SECURITY.md", "start_line": 19, "end_line": 19, "fact": "Модель не гарантирует защиту от дампов/привилегированного доступа к unlocked process и availability-атак." }
+      ]
+    },
+    {
+      "question": "Образует ли terminalId отдельную границу между пользователями или сейфами?",
+      "disposition": "Методы write/resize проверяют существование terminalId, а не повторную принадлежность открытому сейфу; UUID выбирает renderer. Однако проверенный продукт использует одно окно и один renderer для всех открытых сейфов, поэтому отдельная межпользовательская граница здесь не установлена. Одновременные start с одинаковым UUID могут пройти проверку до регистрации и перезаписать Map; обычный UI создаёт разные идентификаторы, а атакующий сервер не задаёт terminalId. Это остаётся пробелом устойчивости менеджера; pending-регистрация также устранит дубликаты.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 79, "end_line": 95, "fact": "Проверка дубликата start и операции write/resize используют terminalId." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 138, "end_line": 139, "fact": "Map.set выполняется после асинхронного открытия shell без повторной проверки дубликата." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 198, "end_line": 201, "fact": "requireSession проверяет только наличие и closed-флаг терминала." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 19, "end_line": 21, "fact": "В приложении один менеджер терминалов, отправляющий события единственному mainWindow." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 165, "end_line": 168, "fact": "Операции терминала проходят общий trusted wrapper." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 261, "end_line": 267, "fact": "IPC wrapper проверяет pmapp://local sender URL; дополнительной привязки terminalId к отдельному sender в этом пути нет." },
+        { "path": "electron-app/src/renderer/src/App.vue", "start_line": 311, "end_line": 320, "fact": "Обычный UI создаёт TerminalTab с новым crypto.randomUUID и привязкой к vaultSessionId/recordId." }
+      ]
+    },
+    {
+      "question": "Ограничивают ли размеры IPC-сообщений совокупную нагрузку от удалённого вывода?",
+      "disposition": "Ограничен размер одного исходящего фрагмента и одной записи в терминал, но не суммарная очередь. data/stdout и stderr сразу пересылаются renderer, тот вызывает terminal.write без callback подтверждения обработки. Обратного давления до SSH-канала нет. Контрдоказательства: scrollback ограничен 5000 строками, а xterm отбрасывает новые записи после примерно 50 миллионов ожидающих символов. Эти меры не равны общему лимиту IPC, но аварийное исчерпание памяти всего приложения в данной статической проверке не воспроизводилось. Это пробел управления потоком с риском зависания/потери вывода; не заявлена утечка или выполнение кода. Для усиления нужны подтверждения обработанных байтов, pause/resume SSH stream, общий предел очереди и обработка отказа xterm.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 15, "end_line": 15, "fact": "Максимальный фрагмент терминала равен 64*1024 символам." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 58, "end_line": 59, "fact": "Входящие write ограничены по длине; resize ограничен по размерам." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 86, "end_line": 90, "fact": "Возвращаемое stream.write значение обратного давления не используется." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 138, "end_line": 141, "fact": "Обработчики data обоих потоков немедленно декодируют и отправляют вывод." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 204, "end_line": 207, "fact": "emitText только делит строку на фрагменты, без счётчика очереди или ожидания потребителя." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 20, "end_line": 20, "fact": "Emitter сразу вызывает webContents.send." },
+        { "path": "electron-app/src/renderer/src/components/TerminalSession.vue", "start_line": 76, "end_line": 76, "fact": "Scrollback xterm установлен в 5000 строк." },
+        { "path": "electron-app/src/renderer/src/components/TerminalSession.vue", "start_line": 95, "end_line": 97, "fact": "Получатель вызывает terminal.write без callback и без обработки исключения в этом обработчике." },
+        { "path": "electron-app/node_modules/@xterm/xterm/src/common/input/WriteBuffer.ts", "start_line": 13, "end_line": 20, "fact": "xterm содержит аварийный watermark=50000000 и поясняет необходимость flow control." },
+        { "path": "electron-app/node_modules/@xterm/xterm/src/common/input/WriteBuffer.ts", "start_line": 103, "end_line": 105, "fact": "При превышении watermark write выбрасывает исключение до добавления новой записи." },
+        { "path": "SECURITY.md", "start_line": 19, "end_line": 19, "fact": "Availability-атаки явно указаны как возможный остаточный риск." }
+      ]
+    },
+    {
+      "question": "Может ли терминальный вывод писать в clipboard, открывать внешние ссылки или исполняться как HTML?",
+      "disposition": "В проверенном потребителе вывод передаётся xterm.write, OSC-52 и команды изменения заголовка поглощаются. Renderer работает с sandbox/contextIsolation без Node; main блокирует навигацию, новые окна и webview. Эти контрмеры исключают прямой путь из произвольных SSH-байтов в HTML или clipboard в изученном коде; эксплуатация неизвестной ошибки самого xterm не предполагается.",
+      "evidence": [
+        { "path": "electron-app/src/renderer/src/components/TerminalSession.vue", "start_line": 82, "end_line": 97, "fact": "Подключён FitAddon; OSC 52/0/1/2 поглощаются, данные передаются xterm.write." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 91, "end_line": 100, "fact": "Окно использует sandbox, contextIsolation, webSecurity, отключённый Node и запрещённый webview; packaged DevTools выключены." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 112, "end_line": 114, "fact": "Навигация, открытие новых окон и подключение webview блокируются обработчиками main." }
+      ]
+    },
+    {
+      "question": "Безопасно ли удалять все error listeners до полного закрытия SSH-транспорта?",
+      "disposition": "Есть отдельный риск надёжности: finish удаляет все listeners клиента и потока, затем вызывает end, которое инициирует завершение TCP без немедленного destroy. ssh2 ещё может переслать socket error в Client.error; после снятия обработчиков такая ошибка способна стать необработанной. Сетевой сценарий и точное поведение Electron без запуска не подтверждены, поэтому это не выдано за воспроизведённую уязвимость. При усилении следует сохранять безопасный error listener до фактического close и не удалять внутренние обработчики зависимости без необходимости.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 210, "end_line": 222, "fact": "finish удаляет сессию, снимает все stream/stderr/client listeners и вызывает end." },
+        { "path": "electron-app/node_modules/ssh2/lib/client.js", "start_line": 798, "end_line": 805, "fact": "Socket error преобразуется в Client.emit('error')." },
+        { "path": "electron-app/node_modules/ssh2/lib/client.js", "start_line": 1179, "end_line": 1188, "fact": "Client.end отправляет DISCONNECT и вызывает socket.end; уничтожение сокета реализовано отдельно в destroy." }
+      ]
+    },
+    {
+      "question": "Проверяются ли фактические размеры и свойства присланной DH group exchange группы?",
+      "disposition": "Открытый вопрос для проверки runtime. Современный набор допускает diffie-hellman-group-exchange-sha256. Установленный ssh2 запрашивает диапазон 2048–8192 бит, но в разобранном JS-пути проверяет лишь тип Buffer для p/g и передаёт их в Node createDiffieHellman/generateKeys; локальной проверки полученной длины и verifyError не найдено. Это не доказательство принятия слабой группы: отказ может обеспечивать pinned Node/OpenSSL, а подпись обмена остаётся обязательной. Без разрешённой динамической проверки нельзя утверждать downgrade, восстановление секрета или конкретную стоимость DoS. Следует отдельно проверить малые/чрезмерные/небезопасные синтетические группы на поставляемом Electron либо исключить GEX до подтверждения нужных ограничений.",
+      "evidence": [
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 17, "end_line": 18, "fact": "В современном allowlist есть diffie-hellman-group-exchange-sha256." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 52, "end_line": 53, "fact": "Запрашиваемые границы GEX определены как 2048 и 8192 бит." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 1395, "end_line": 1398, "fact": "Эти границы отправляются серверу в GEX_REQUEST." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 1470, "end_line": 1485, "fact": "После извлечения p/g из пакета код вызывает setDHParams и generateKeys; оставлен TODO validate prime." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 1403, "end_line": 1415, "fact": "Параметры проверяются на Buffer, затем передаются в Node crypto без отдельной JS-проверки длины группы." },
+        { "path": "electron-app/node_modules/ssh2/lib/protocol/kex.js", "start_line": 698, "end_line": 714, "fact": "Подпись обмена обязательна; её провал вызывает fatal error и ограничивает возможность сетевой подмены группы." }
+      ]
+    }
+  ],
+  "limitations": [
+    "Проверка выполнена только статическим чтением. Приложение, тесты, сборки, реальные SSH-подключения и инструментальные PoC не запускались; сеть, реальные секреты, git history и результаты других модулей не читались.",
+    "Прочитаны целиком только два файла, перечисленные в fully_reviewed_files; supporting source и установленные зависимости использованы адресно для проверки потребителей и контрдоказательств. Полный аудит ssh2, xterm, Electron и OpenSSL не заявляется.",
+    "Отсутствие findings означает отсутствие подтверждённой уязвимости в выбранной модели и методе проверки, а не доказательство полной безопасности. Пробелы отмены pending-соединений, потоковых лимитов и очистки listeners сохранены с доказательствами в resolved_questions.",
+    "Набор тестов назначенного модуля содержит положительные TOFU/password/keyboard-interactive/legacy сценарии и отдельные проверки политики, но не отдельные случаи изменённого host key, блокировки во время pending shell, повторных terminalId и потока вывода. Это ограничение доказательств, а не самостоятельная уязвимость (electron-app/src/main/services/ssh-terminal.test.ts:11-199).",
+    "Поведение pinned Electron/OpenSSL при неверных DH GEX параметрах требует отдельной разрешённой проверки; существование CVE или успешная эксплуатация не утверждаются."
+  ]
+}

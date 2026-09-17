@@ -1,0 +1,578 @@
+{
+  "module_id": "electron-boundary",
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "status": "complete",
+  "summary": "Полностью прочитаны пять назначенных файлов и проверены связанные потребители. Выявлены три дефекта жизненного цикла: незавершённые операции могут пережить блокировку; очистка интерфейса ожидает файловую очистку; выход отменяет таймер очистки буфера обмена. Два вывода имеют уровень medium, один low. Установлены действующие границы main/preload/renderer, локального протокола, сетевых запросов и защиты от захвата. Проверка статическая, без исполнения приложения.",
+  "fully_reviewed_files": [
+    "electron-app/src/main/main.ts",
+    "electron-app/src/main/services/capture-protection.test.ts",
+    "electron-app/src/main/services/capture-protection.ts",
+    "electron-app/src/preload/preload.ts",
+    "electron-app/src/shared/content-security-policy.ts"
+  ],
+  "findings": [
+    {
+      "id": "electron-boundary-001",
+      "title": "Блокировка не отменяет начатое открытие сейфа и незавершённое SSH-подключение",
+      "severity": "medium",
+      "confidence": "high",
+      "cwe": "CWE-362",
+      "summary": "lockAll закрывает только уже зарегистрированные сессии. Открытие или создание, начавшееся до события блокировки и находящееся на await, затем может зарегистрировать новую сессию и вернуть её открытый документ. Renderer безусловно добавляет поздний результат после ранее обработанного app:lock. Аналогично начатое SSH-подключение не учитывается closeAll до создания shell.",
+      "attacker": "Сторона, управляющая задержками сетевой папки с выбранным пользователем сейфом; для SSH-варианта — ранее подтверждённый SSH-сервер с закреплённым ключом. Доступ администратора или исполнение кода на локальном хосте не требуется для создания задержки.",
+      "prerequisites": "Пользователь уже передал правильный мастер-пароль и начал открытие/создание; lock-screen или suspend происходит до регистрации сессии. Для SSH пользователь предварительно подтвердил адрес, а соединение ещё устанавливается. Злоумышленник не получает возможность открыть произвольный сейф без пароля.",
+      "dataflow": "vault:open/create → асинхронные canonicalVaultPath/readBounded/decodeVault/createMaterial → параллельно lockAll → closeAll обходит текущую Map и отправляет app:lock → операция продолжается, addSession помещает ключ и документ в Map → snapshot возвращается через IPC → submitVaultDialog вызывает addTab. Для SSH main ожидает sshTerminals.start, пока closeAll видит только уже готовые sessions; поздний shell добавляется без повторной проверки состояния сейфа.",
+      "root_cause": "Нет поколения блокировки, состояния отмены или реестра незавершённых операций, проверяемого перед регистрацией сессии и публикацией результата. Закрытие текущей Map ошибочно используется как завершённый переход в заблокированное состояние.",
+      "impact": "Сейф вновь оказывается открыт после уведомления о блокировке без нового ввода мастер-пароля; в main снова имеется rootKey, а в renderer — документ. SSH может продолжать аутентификацию после блокировки до позднего закрытия интерфейсом. Это нарушение жизненного цикла блокировки, а не обход шифрования либо закрепления ключа SSH.",
+      "counterevidence": "Существующие VaultSession удаляются и их material очищается синхронно до освобождения lock-файла. Открытие всё ещё требует правильной аутентификации. Native SSH confirmations и повторные getSshProfile защищают изменения во время диалогов. TerminalSession.vue проверяет disposed после успешного соединения и посылает close, поэтому длительно живущий осиротевший SSH-сеанс при исправном renderer не доказан; однако эта проверка происходит после аутентификации. Windows lock сам по себе продолжает защищать рабочий стол. Извлечение данных через процесс-дамп вне модели не заявляется.",
+      "validation": "Статически прослежено допустимое чередование: остановить open перед addSession на чтении сетевого файла; выполнить lockAll с пустой Map; завершить чтение и аутентификацию; addSession и addTab выполнятся после app:lock. Проверены весь main.ts, методы store и фактический обработчик результата в App.vue. Для SSH проверены момент регистрации и поздняя компенсация renderer. Сценарии не исполнялись; длительность окна и поведение Windows при suspend требуют отдельного синтетического интеграционного теста.",
+      "remediation": "Ввести main-owned поколение блокировки и отмену незавершённых операций. При lock/close инвалидировать соответствующие операции до await; перед addSession и возвратом snapshot сравнивать поколение, уничтожая полученные material/document при отмене. Отслеживать pending SSH-клиенты с момента создания, закрывать их при lock/close и проверять действительность vault-сессии перед аутентификацией/регистрацией. Renderer также должен отбрасывать поздние результаты прежнего поколения.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 43,
+          "end_line": 46,
+          "fact": "События lock-screen/suspend/shutdown вызывают lockAll; проверка бездействия выполняется отдельно."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 135,
+          "end_line": 136,
+          "fact": "IPC open/create непосредственно возвращает асинхронный результат store без маркера поколения блокировки."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 270,
+          "end_line": 274,
+          "fact": "lockAll закрывает текущие SSH/vault сессии и отправляет app:lock, не отменяя начатые операции."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 32,
+          "end_line": 41,
+          "fact": "Открытие ожидает канонизацию, lock, чтение и декодирование, затем регистрирует сессию и возвращает snapshot."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 60,
+          "end_line": 71,
+          "fact": "Создание ожидает получение material и файловые операции до addSession."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 152,
+          "end_line": 175,
+          "fact": "closeAll обходит только текущие ключи sessions; addSession позже безусловно вставляет новую сессию."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 91,
+          "end_line": 97,
+          "fact": "app:lock очищает текущие секреты renderer."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 128,
+          "end_line": 163,
+          "fact": "После await open/create результат без проверки блокировки передаётся в addTab и добавляется в tabs."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 196,
+          "end_line": 225,
+          "fact": "SSH-профиль перепроверяется вокруг подтверждений, но после await start отсутствует проверка отмены либо блокировки."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 98,
+          "end_line": 109,
+          "fact": "closeAll/closeByVault закрывают только элементы sessions."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 112,
+          "end_line": 146,
+          "fact": "SSH-клиент и временные credentials существуют до добавления sessions, которое происходит только после ready и shell."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 168,
+          "end_line": 194,
+          "fact": "Подключение содержит credentials и hostVerifier, но не состояние отмены сессии сейфа."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 126,
+          "end_line": 168,
+          "fact": "Renderer посылает close при unmount и повторяет его при позднем connected; это ограничивает эффект, но происходит после сетевой аутентификации."
+        }
+      ]
+    },
+    {
+      "id": "electron-boundary-002",
+      "title": "Зависшая очистка lock-файла задерживает удаление секретов из интерфейса при автоблокировке",
+      "severity": "medium",
+      "confidence": "high",
+      "cwe": "CWE-459",
+      "summary": "И lockAll, и lockIdleVaults отправляют уведомление об очистке renderer только после await store.close/closeAll. Эти методы ожидают закрытие дескриптора и unlink соседнего lock-файла. Медленная или зависшая SMB-операция оставляет открытый документ в интерфейсе после наступления блокировки.",
+      "attacker": "Сторона, управляющая сервером сетевой папки либо задержкой его файловых ответов. Дальнейшее случайное раскрытие возможно человеку, которому пользователь показывает экран или содержимое приложения после ожидаемой автоблокировки; удалённое извлечение самим SMB-сервером не доказано.",
+      "prerequisites": "Открытый сейф расположен на сетевой папке. Наступает inactivity auto-lock либо lock-screen/suspend, а close/unlink sibling lock-файла не завершается своевременно. Для видимого эффекта существует открытая вкладка с данными.",
+      "dataflow": "Таймер → autoLockSessionIds → await store.close → sessions.delete/clearDocument/disposeMaterial → await releaseLock → await handle.close/unlink → только после завершения app:vault-locked/app:lock → renderer удаляет вкладки и секреты. При ожидании I/O последний переход не происходит; глобальный idleLockRunning остаётся true.",
+      "root_cause": "Операция немедленной визуальной блокировки поставлена в зависимость от потенциально неограниченной очистки внешнего filesystem-ресурса. finally защищает от завершившегося исключения, но не от незавершённого await.",
+      "impact": "Автоблокировка удаляет ключи main, но оставляет копию открытого документа и видимые секреты в renderer до ответа файловой системы. Проблема не ограничивается потерей доступности файлов: обещанное скрытие уже открытых данных откладывается. Само раскрытие удалённому владельцу SMB или обход Windows lock не установлены.",
+      "counterevidence": "VaultStore.close сначала удаляет сессию и очищает ключевой материал, поэтому этот дефект не сохраняет действующий rootKey main. releaseLock подавляет завершившиеся ошибки close/unlink, а finally в lockIdleVaults в итоге отправляет событие даже при ошибке. Эти меры не ограничивают ожидание. Защита захвата окна остаётся включённой; атаки через камеры/администратора не заявляются.",
+      "validation": "Статически проверена зависимость каждой отправки события от releaseLock. Достаточно незавершённого Promise close/unlink, чтобы управление не дошло до webContents.send; код не задаёт тайм-аут и не уведомляет renderer раньше. Реальные SMB timeout и UI на Windows не запускались. Синтетический проверочный сценарий: задержать releaseLock после удаления сессии, вызвать idle lock и проверить немедленное исчезновение вкладки.",
+      "remediation": "В момент начала блокировки синхронно отозвать доступ к сессии и немедленно уведомить renderer, очистить принадлежащий приложению clipboard и отменить pending-операции. Освобождение файловых ресурсов выполнять отдельно от скрытия данных; ограничить/наблюдать его время и запретить повторное открытие до безопасного разрешения владения lock. Не ослаблять единственного writer ради тайм-аута.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 270,
+          "end_line": 274,
+          "fact": "Глобальное событие app:lock и clipboard.clear находятся после await store.closeAll."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 277,
+          "end_line": 294,
+          "fact": "При inactivity событие app:vault-locked находится после await store.close; idleLockRunning снимается только при завершении всего обработчика."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 152,
+          "end_line": 163,
+          "fact": "close очищает main-сессию, но его Promise завершается лишь после releaseLock; closeAll ожидает все close."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 185,
+          "end_line": 202,
+          "fact": "Сейф и sibling lock используют выбранный файловый путь; ограничения не исключают сетевые папки."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 208,
+          "end_line": 210,
+          "fact": "releaseLock последовательно ожидает close и unlink без собственного ограничения времени."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 91,
+          "end_line": 97,
+          "fact": "Renderer удаляет данные при получении событий lock/vault-locked."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 464,
+          "end_line": 466,
+          "fact": "clearRendererSecrets очищает текущие секреты и удаляет вкладки; без уведомления эта операция не вызывается."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 5,
+          "end_line": 5,
+          "fact": "Сторона, контролирующая сетевую папку, входит в перечень атакующих."
+        }
+      ]
+    },
+    {
+      "id": "electron-boundary-003",
+      "title": "Закрытие приложения до тайм-аута оставляет скопированный секрет в буфере обмена",
+      "severity": "low",
+      "confidence": "high",
+      "cwe": "CWE-459",
+      "summary": "copySecret устанавливает таймер условной очистки, но before-quit и closed закрывают только SSH и VaultStore. Если пользователь выходит раньше выбранного срока, процесс и его таймер прекращаются, а очистка системного clipboard больше не выполняется.",
+      "attacker": "Получатель последующей случайной вставки в другое приложение или переписку после закрытия PasswordManager. Отдельный вредоносный процесс на разблокированном хосте не требуется и не используется как обоснование.",
+      "prerequisites": "Пользователь копирует секрет штатной кнопкой и закрывает приложение в течение clearSeconds; clipboard ещё содержит именно скопированное значение.",
+      "dataflow": "renderer copySecret → clipboard:copy → clipboard.writeText → setTimeout(...).unref() → закрытие последнего окна/app.quit → before-quit закрывает SSH/store без clipboard cleanup → таймер больше не живёт, скопированное значение остаётся в системном clipboard.",
+      "root_cause": "Срок хранения секрета реализован только таймером процесса; очистка принадлежащего приложению clipboard не включена в штатный жизненный цикл выхода. Ожидаемый digest хранится внутри замыкания таймера и недоступен обработчику shutdown.",
+      "impact": "Скопированный секрет остаётся доступен для последующей вставки после заявленного интервала, увеличивая риск случайного раскрытия. Это относится к текущему буферу обмена, отдельно от уже документированного отсутствия suppression истории/roaming.",
+      "counterevidence": "При работающем приложении содержимое сравнивается по SHA-256 и стирается только при совпадении; lockAll и успешная inactivity-блокировка очищают clipboard. Если таймер успел сработать до выхода, проблемы нет. Доступ malware к clipboard разблокированного пользователя вне модели; пользовательская копия секрета изначально является явным действием.",
+      "validation": "Статически сопоставлены все записи/очистки clipboard с полными обработчиками before-quit и closed. Оба пути выхода не вызывают clearClipboardIfUnchanged/clipboard.clear и не дожидаются таймера. Windows clipboard persistence и реальное закрытие не проверялись исполнением; требуется синтетический ручной либо интеграционный сценарий copy → quit до тайм-аута → paste после срока.",
+      "remediation": "Отслеживать digest текущего значения, записанного приложением, и условно очищать его при штатном закрытии/выходе до завершения процесса. Сохранить правило, что более новое содержимое другого приложения не стирается. Отменять связанные таймеры и обнулять digest после проверки.",
+      "evidence": [
+        {
+          "path": "electron-app/src/preload/preload.ts",
+          "start_line": 12,
+          "end_line": 12,
+          "fact": "copySecret предоставляет штатный путь записи секрета через main IPC."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 161,
+          "end_line": 164,
+          "fact": "clipboard:copy принимает clearSeconds от 5 до 600 и вызывает условную очистку."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 309,
+          "end_line": 327,
+          "fact": "Запись clipboard планирует только unref-таймер; hash buffers очищаются внутри будущей проверки."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 49,
+          "end_line": 50,
+          "fact": "before-quit закрывает SSH и store; последнее закрытое окно вызывает app.quit без очистки clipboard."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 120,
+          "end_line": 120,
+          "fact": "Обработчик closed также закрывает только SSH/store."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 270,
+          "end_line": 291,
+          "fact": "Очистка clipboard есть в lockAll и при завершённом idle lock — это ограничивает, но не покрывает normal quit."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 263,
+          "end_line": 266,
+          "fact": "После копирования UI сообщает пользователю, через сколько секунд clipboard будет очищен."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 14,
+          "end_line": 14,
+          "fact": "Модель обещает conditional timed clearing; отсутствие clipboard-history/roaming suppression указано отдельно."
+        }
+      ]
+    }
+  ],
+  "resolved_questions": [
+    {
+      "question": "Как фактически разделены доверие и владение секретами между процессами?",
+      "disposition": "Main владеет VaultStore и SshTerminalManager. Preload передаёт конкретные команды и данные событий через замороженный API, не экспортируя ipcRenderer/event. RootKey остаётся в material main, но полная копия VaultDocument, включая поля записей/SSH, передаётся в renderer после открытия и нужна для редактирования. Поэтому доверие к renderer как к месту представления раскрытых данных не равно праву управлять сетевыми направлениями, ключами main или произвольными системными API.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 19,
+          "end_line": 20,
+          "fact": "Main создаёт единственные менеджеры vault и SSH; SSH события направляет mainWindow."
+        },
+        {
+          "path": "electron-app/src/preload/preload.ts",
+          "start_line": 4,
+          "end_line": 34,
+          "fact": "Замороженный API содержит фиксированные invoke/send и подписки; callback получает payload без IpcRendererEvent."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 19,
+          "end_line": 26,
+          "fact": "Root material и document находятся в VaultSession main."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 263,
+          "end_line": 264,
+          "fact": "snapshot возвращает structuredClone(document), не material."
+        },
+        {
+          "path": "electron-app/src/shared/contracts.ts",
+          "start_line": 9,
+          "end_line": 18,
+          "fact": "SshProfile включает поля credentials, которые входят в документ."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 188,
+          "end_line": 203,
+          "fact": "SSH start принимает identifiers и размеры; профиль получает main из своего VaultStore."
+        }
+      ]
+    },
+    {
+      "question": "Доказан ли обход IPC sender validation или sandbox?",
+      "disposition": "Нет. Окно использует contextIsolation, sandbox, webSecurity, отключённые Node/webview и packaged DevTools. Все invoke handlers обёрнуты trusted; activity также проверяет отправителя. Проверка senderFrame ограничена protocol/hostname и не сверяет event.sender с mainWindow.webContents, mainFrame и точным index.html. Это неполнота дополнительной защиты, но достижимый чужой pmapp-frame с bridge в текущей архитектуре не установлен: имеется одно окно, frame-src none и запрет новых окон/webview. В уязвимость без источника чужого кадра не повышено.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 79,
+          "end_line": 100,
+          "fact": "Единственное создаваемое BrowserWindow имеет требуемые webPreferences."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 112,
+          "end_line": 114,
+          "fact": "Навигация, создание новых окон и attach webview блокируются."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 124,
+          "end_line": 185,
+          "fact": "Регистрация фиксированного набора IPC handlers использует trusted; activity отдельно вызывает assertTrustedSender."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 261,
+          "end_line": 268,
+          "fact": "trusted проверяет senderFrame URL только по pmapp: и hostname local."
+        },
+        {
+          "path": "electron-app/src/shared/content-security-policy.ts",
+          "start_line": 6,
+          "end_line": 6,
+          "fact": "CSP запрещает frame-src."
+        }
+      ]
+    },
+    {
+      "question": "Какие правила действуют на границе packaged assets / browser network и доказан ли traversal?",
+      "disposition": "pmapp регистрируется как standard/secure; обработчик принимает GET для local, декодирует и нормализует путь, проверяет relative/isAbsolute и затем читает локальный asset. Очевидный выход за rendererRoot через .. отвергается; обход или чтение произвольного файла не доказаны. CSP задаёт только self scripts/styles/fonts, допускает inline CSS и data images, запрещает renderer connect/object/base/form/frame. Политика общая для HTTP-подобного header и HTML meta. Отдельного will-download deny нет в полном main.ts, несмотря на текст модели; достижимая цепочка создания загрузки из неисполняемого SSH/vault контента статически не найдена, поэтому это остаётся вопросом browser integration, не подтверждённым exploit.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 14,
+          "end_line": 14,
+          "fact": "Схема регистрируется с standard/secure/supportFetchAPI."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 52,
+          "end_line": 62,
+          "fact": "Handler проверяет host/method и относительный путь до net.fetch file URL."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 65,
+          "end_line": 74,
+          "fact": "Permissions отвергаются, CSP и nosniff добавляются к ответам."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 77,
+          "end_line": 121,
+          "fact": "Полная конфигурация окна содержит navigation/window/webview blockers, но не обработчик downloads."
+        },
+        {
+          "path": "electron-app/src/shared/content-security-policy.ts",
+          "start_line": 1,
+          "end_line": 6,
+          "fact": "Общая политика явно разрешает inline CSS для xterm и запрещает сетевые соединения renderer."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 4,
+          "end_line": 15,
+          "fact": "Vite импортирует ту же политику и вставляет meta в head."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 13,
+          "end_line": 13,
+          "fact": "Модель заявляет download blocking; код этой отдельной меры не найден."
+        }
+      ]
+    },
+    {
+      "question": "Можно ли отключить capture protection runtime-переменной или IPC в обычной сборке?",
+      "disposition": "В проверенном пути сборки нет. Build script подставляет литерал для main/preload, Vite отдельно подставляет compile-time флаг renderer. Окно создаётся скрытым, конфигурируется защита, и при несоответствии isContentProtected либо исключении окно уничтожается до load/show. В диагностическом renderer есть видимый badge. Тесты покрывают обычный и диагностический режимы, mismatch и исключение setter. Реальное выполнение Windows API/невозможность screen capture и release gating этим статическим модульным аудитом не подтверждаются.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 84,
+          "end_line": 121,
+          "fact": "show:false предшествует configureCaptureProtection; loadURL/ready-to-show регистрируются после успешной проверки."
+        },
+        {
+          "path": "electron-app/src/main/services/capture-protection.ts",
+          "start_line": 7,
+          "end_line": 17,
+          "fact": "Состояние запрашивается, читается обратно; ошибка уничтожает окно."
+        },
+        {
+          "path": "electron-app/src/main/services/capture-protection.test.ts",
+          "start_line": 9,
+          "end_line": 39,
+          "fact": "Unit tests охватывают normal/diagnostic, mismatch и setter exception."
+        },
+        {
+          "path": "electron-app/scripts/build.mjs",
+          "start_line": 10,
+          "end_line": 20,
+          "fact": "esbuild заменяет process.env.PM_SCREENSHOT_DIAGNOSTICS строковым литералом при сборке entrypoints."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 17,
+          "end_line": 18,
+          "fact": "Диагностический флаг renderer заменяется булевым литералом."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 473,
+          "end_line": 476,
+          "fact": "При флаге renderer показывает диагностический badge."
+        }
+      ]
+    },
+    {
+      "question": "Какие IPC payload проходят проверку main и кому принадлежит сетевое согласие?",
+      "disposition": "Credentials, UUID, размеры terminal, clipboard bounds и тема проверяются в main. save не является strict wrapper schema, но его document проходит validateDocument в VaultStore до encode; дополнительные поля wrapper сами по себе не потребляются. HIBP consent хранится main и не перезаписывается входящим renderer document; при отсутствии согласия используется native диалог с отменой по умолчанию. Отдельный полный аудит HIBP/codec не заявляется.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 125,
+          "end_line": 164,
+          "fact": "IPC schemas задают bounds для path/password/sessionId/clipboard и native HIBP consent."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 179,
+          "end_line": 195,
+          "fact": "Theme enum и strict SSH start payload проверяются main."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 85,
+          "end_line": 92,
+          "fact": "save валидирует document, клонирует его, ограничивает fingerprints и восстанавливает consent из main."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 140,
+          "end_line": 149,
+          "fact": "Consent читается из существующей main сессии и меняется через отдельный метод."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 51,
+          "end_line": 59,
+          "fact": "Terminal write/resize используют строгие schemas с bounds."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.test.ts",
+          "start_line": 101,
+          "end_line": 115,
+          "fact": "Тесты проверяют, что save из renderer не может включить/выключить main-owned consent."
+        }
+      ]
+    },
+    {
+      "question": "Что предотвращает передачу SSH credentials произвольному адресу из renderer?",
+      "disposition": "Start принимает только identifiers и размеры; main получает сохранённый профиль, показывает native destination confirmation и отдельное legacy warning, заново получает профиль после ожиданий и сравнивает target. TOFU требует native approval, сохранения fingerprint и повторного сравнения. HostVerifier принимает только совпадение закреплённого SHA-256. Терминальные bytes проходят bounded main events в xterm.write; OSC 52 и изменение заголовка потребляются обработчиками. Эти меры не отменяют race блокировки из electron-boundary-001.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 188,
+          "end_line": 229,
+          "fact": "Native approvals и проверки target/host-key persistence происходят на main-owned профиле."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 232,
+          "end_line": 258,
+          "fact": "Оба native диалога используют cancel/defaultId=1."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 179,
+          "end_line": 183,
+          "fact": "HostVerifier допускает только ненулевой expectedFingerprint, совпадающий с наблюдённым."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 204,
+          "end_line": 206,
+          "fact": "Выход SSH делится на сообщения ограниченного размера."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 86,
+          "end_line": 97,
+          "fact": "OSC 52/0/1/2 поглощаются, SSH data передаются xterm.write."
+        }
+      ]
+    },
+    {
+      "question": "Является ли void store.closeAll при выходе доказанным сохранением rootKey?",
+      "disposition": "Нет. closeAll вызывает close для всех имеющихся ключей Map сразу; close удаляет сессию, очищает document/material/sourceHash до первого await releaseLock. Поэтому отсутствие await в before-quit само по себе не доказывает сохранение rootKey существующей сессии. Оно не решает pending-операции и clipboard, описанные отдельно. Невозможность гарантированно стереть строки/копии V8 остаётся документированным ограничением.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 49,
+          "end_line": 49,
+          "fact": "before-quit запускает closeAll без ожидания."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 152,
+          "end_line": 163,
+          "fact": "Синхронное удаление и очистка существующих сессий происходят до ожидания файловой очистки."
+        },
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 148,
+          "end_line": 151,
+          "fact": "disposeMaterial обнуляет rootKey и buffers метаданных."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 9,
+          "end_line": 9,
+          "fact": "Модель признаёт ограничение памяти JavaScript."
+        }
+      ]
+    },
+    {
+      "question": "Как фактически работают second-instance и inactivity?",
+      "disposition": "Пути командной строки/second-instance ограничены 32 элементами, отбрасывают --, проходят resolve, length/extension/existence check и только помещаются в очередь диалога открытия; авторазблокировки по пути нет. Это lexical normalization, не realpath, а existence check делает filesystem I/O. Таймер бездействия общий для приложения, обновляется доверенным IPC и activity событиями; у каждого сейфа собственный timeout, 0 исключает его из inactivity. Здесь не установлены отдельные path injection или spoofed-input exploit.",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 27,
+          "end_line": 35,
+          "fact": "second-instance фильтрует типы и отправляет safeVaultPaths в renderer."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 331,
+          "end_line": 338,
+          "fact": "Пути ограничены 32 аргументами, нормализованы resolve и проверены по extension/length/existence."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 455,
+          "end_line": 462,
+          "fact": "Полученные пути помещаются в очередь диалога с пустым паролем."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 261,
+          "end_line": 262,
+          "fact": "Каждый trusted invoke обновляет общую lastActivity."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 277,
+          "end_line": 291,
+          "fact": "Периодический handler выбирает истекшие sessions и блокирует их."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 166,
+          "end_line": 169,
+          "fact": "autoLockSessionIds исключает timeout=0 и сравнивает положительные значения."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 81,
+          "end_line": 98,
+          "fact": "Физические UI события pointerdown/keydown/wheel передаются как activity."
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Разрешён только offline static review: приложение, unit/integration tests, builds, Electron/Windows capture/clipboard/SMB поведение не запускались; сеть, внешние приложения и история git не использовались.",
+    "Источник main и четыре остальных назначенных файла прочитаны полностью. Supporting files использованы только для фактических consumers, lifecycle и counterevidence; полный аудит их модулей не заявляется.",
+    "Severity учитывает ограниченные предпосылки: правильный пароль/предварительное SSH approval уже есть, атака на шифрование не доказана, Windows account/kernel и привилегированный разблокированный host остаются доверенными согласно SECURITY.md:19-25 и docs/threat-model.md:5.",
+    "Для задержек filesystem нет измеренного верхнего времени; статически доказана зависимость UI cleanup от завершения await (main.ts:270-294, storage.ts:208-210), но реальные SMB сроки требуют платформенной проверки.",
+    "Нет доказанного источника исполнения произвольного кода renderer или чужого pmapp-frame. Неполная привязка sender к mainFrame и отсутствие отдельного download handler сохранены как вопросы усиления и интеграционной проверки, а не выданы за выполненный обход.",
+    "Реальные vault/key/credential/runtime/signing файлы и результаты других модулей не читались. Исходники не изменялись."
+  ]
+}

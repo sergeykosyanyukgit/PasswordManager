@@ -1,0 +1,74 @@
+{
+  "name": "passwordmanager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portable encrypted local vault for Windows",
+  "main": "dist/main/main.cjs",
+  "type": "module",
+  "scripts": {
+    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "node scripts/build.mjs",
+    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run --config vitest.config.ts",
+    "test:terminal": "node scripts/test-terminal.mjs",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win portable --x64",
+    "dist:installer": "npm run build && electron-builder --win nsis --x64",
+    "sign": "pwsh -NoProfile -File scripts/sign.ps1 -Executable release/PasswordManager.exe",
+    "sign:test": "pwsh -NoProfile -File scripts/sign.ps1 -Executable release/PasswordManager.exe -TestBuild",
+    "audit:all": "npm audit && npm audit --omit=dev"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "hash-wasm": "4.12.0",
+    "ssh2": "1.17.0",
+    "vue": "3.5.42",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "@types/ssh2": "1.15.6",
+    "@vitejs/plugin-vue": "6.0.8",
+    "electron": "44.1.1",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "png-to-ico": "3.0.2",
+    "typescript": "6.0.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "vue-tsc": "3.3.11"
+  },
+  "build": {
+    "appId": "local.passwordmanager.desktop",
+    "productName": "PasswordManager",
+    "asar": true,
+    "npmRebuild": false,
+    "compression": "maximum",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "PasswordManager.exe"
+    },
+    "portable": {
+      "artifactName": "PasswordManager.exe",
+      "requestExecutionLevel": "user"
+    },
+    "nsis": {
+      "artifactName": "PasswordManager-Setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": false
+    }
+  }
+}

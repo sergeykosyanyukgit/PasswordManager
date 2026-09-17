@@ -1,0 +1,153 @@
+{
+  "module_id": "vault-codec",
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "status": "complete",
+  "summary": "Полностью прочитаны три назначенных файла и прослежены потребители codec в storage, IPC и SSH. Найден один дефект ограничения ресурсов: неизвестные поля и произвольная структура JSON проходят проверку документа и попадают в обработку main без структурного или совокупного бюджета. Обход аутентификации, повтор nonce под одним ключом и снижение KDF через неподтверждённый заголовок не установлены. Проверка статическая; приложение и тесты не запускались.",
+  "fully_reviewed_files": [
+    "electron-app/src/main/vault/codec.test.ts",
+    "electron-app/src/main/vault/codec.ts",
+    "electron-app/src/shared/contracts.ts"
+  ],
+  "findings": [
+    {
+      "id": "vault-codec-001",
+      "title": "Непроверенная структура JSON обходит лимиты документа и обрабатывается в main до проверки общего размера",
+      "severity": "medium",
+      "confidence": "medium",
+      "cwe": "CWE-400",
+      "summary": "validateDocument проверяет только известные поля, но не запрещает дополнительные свойства и не ограничивает их глубину или число узлов. При открытии JSON.parse создаёт весь граф объектов до этой проверки; при сохранении JSON.stringify обходит весь документ до проверки размера 64 MiB. Таким образом, небольшой корректный VaultDocument может содержать дополнительное поле с крайне глубокой или разветвлённой структурой, которое минует установленные ограничения и заставит main выполнять дорогое выделение памяти, клонирование или сериализацию.",
+      "attacker": "Автор внешнего .pmvault, который передаёт пользователю свой корректно зашифрованный файл и пароль, либо код в недоверенном renderer при наличии открытой сессии. Доступ к rootKey жертвы и административные права для этих входов не требуются.",
+      "prerequisites": "Для файлового пути пользователь должен самостоятельно открыть подготовленный атакующим vault с известным паролем: изменение чужого ciphertext без ключа не проходит GCM. Для IPC-пути необходимы выполнение кода в renderer и действующий sessionId; самостоятельная возможность получить такое выполнение в данном модуле не установлена.",
+      "dataflow": "Файл: vault:open → VaultStore.open → decodeVault → успешный GCM final → JSON.parse → validateDocument, игнорирующий дополнительные поля → addSession → snapshot/structuredClone. IPC: vault:save → VaultStore.save → validateDocument → structuredClone → encodeVault → JSON.stringify/Buffer.from → лишь затем проверка json.length. Дополнительное свойство с глубоко вложенными массивами не относится к folders и потому не ограничивается validateAncestry. Разделяемые ссылки в входном графе дополнительно опасны для JSON.stringify, который должен материализовать повторяющиеся ветви; этот вариант зависит от сохранения ссылок при передаче через Electron и не является единственным основанием находки.",
+      "root_cause": "Лимит 64 MiB применяется к строке JSON после выделения памяти при сохранении; при чтении он ограничивает только число байтов до JSON.parse. Нет предварительного бюджета глубины, числа JSON-узлов и совокупного размера, а проверка схемы не отклоняет неизвестные поля. Ограничение глубины 64 распространяется только на связи parentId в известном массиве folders, а не на фактический граф входного документа.",
+      "impact": "Исчерпание памяти и/или длительная блокировка главного процесса при обработке данных, не прошедших полный структурный контроль. Файловый путь усиливается порядком операций storage: сессия добавляется в Map до snapshot; при ошибке последующего клонирования внешний catch освобождает lock, но не удаляет уже добавленную сессию, сохраняя её большой документ. Повторные попытки открытия могут накапливать такие документы. Точные пороги OOM и длительность блокировки в целевом Electron не измерены; утечка plaintext, обход GCM и выполнение кода из JSON не заявляются.",
+      "counterevidence": "GCM проверяется до JSON.parse, JsonLength ограничен 64 MiB, весь файл ограничен 256 MiB; известные массивы, строки и ancestry также имеют лимиты. Поэтому обычное изменение украденного locked vault без пароля не достигает JSON-парсера. Ошибки разбора/клонирования обычно возвращаются как отказ открытия или сохранения, а не обязательно завершают процесс. Политика исключает обычные атаки удаления/доступности, но отдельно относит parser memory exhaustion внутри поддерживаемого размера к reportable issues. Вероятность и точный размер воздействия зависят от пользовательского открытия подготовленного файла или компрометации renderer и от лимитов V8.",
+      "validation": "Статически прослежены оба входа и все вызовы validateDocument/encodeVault/decodeVault. Контрпример структуры: обычные обязательные поля VaultDocument плюс дополнительный ключ с массивами произвольной глубины; ни одна проверка validateDocument не читает этот ключ, а JSON.parse, structuredClone и JSON.stringify обрабатывают его. В storage.open addSession предшествует потенциально ошибочному snapshot, а catch не вызывает close/disposeMaterial. Эксплуатационный файл, приложение и тесты не запускались; фактический crash/OOM не утверждается как воспроизведённый.",
+      "remediation": "Отклонять неизвестные поля на каждом уровне и принимать только явно построенный документ из разрешённых скалярных полей. Перед JSON.parse применять ограничивающий потоковый разбор либо предварительный проход с лимитами глубины, числа узлов и длины строк; перед JSON.stringify проверять совокупный бюджет и недопустимые циклы/разделяемые структуры без разворачивания графа. При любой ошибке после addSession удалять сессию и обнулять material. Добавить синтетические отрицательные тесты для глубокого дополнительного поля, чрезмерного количества JSON-узлов, чрезмерного суммарного размера, повторных ссылок IPC и очистки сессии при ошибке snapshot.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 198, "end_line": 204, "fact": "После GCM final проверяется только JsonLength; весь UTF-8 JSON разбирается JSON.parse до validateDocument." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 271, "end_line": 291, "fact": "Валидатор проверяет перечисленные известные поля, но не перечисляет ключи объекта, не запрещает дополнительные свойства и не ограничивает общий граф." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 293, "end_line": 324, "fact": "Вложенные записи, customFields, breach и ssh проверяются по отдельным полям без запрета дополнительных ключей и общего бюджета документа." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 326, "end_line": 336, "fact": "Предел 64 относится только к цепочке parentId папок, а не к синтаксической глубине JSON." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 106, "end_line": 113, "fact": "JSON.stringify и Buffer.from выполняются до проверки MAXIMUM_JSON_SIZE и выделения padded plaintext." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 135, "end_line": 141, "fact": "IPC открывает vault и передаёт document сохранения в VaultStore после проверки sessionId без самостоятельного структурного бюджета." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 85, "end_line": 92, "fact": "save пропускает объект через validateDocument, затем structuredClone и encodeVault; дополнительные поля не удаляются." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 32, "end_line": 47, "fact": "open добавляет сессию до snapshot; catch освобождает lock и повторно выбрасывает ошибку без удаления добавленной сессии." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 172, "end_line": 175, "fact": "addSession сохраняет material и полный document в долгоживущей Map." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 263, "end_line": 265, "fact": "snapshot клонирует весь session.document, включая неизвестные поля." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 154, "end_line": 168, "fact": "До KDF действуют предел файла 256 MiB, фиксированный заголовок и точное соответствие длины ciphertext; это ограничивает файловый вход, но не число создаваемых JSON-объектов." },
+        { "path": "SECURITY.md", "start_line": 42, "end_line": 46, "fact": "Политика явно включает parser memory exhaustion внутри поддерживаемого file cap в reportable issues и исключает обычную авторизованную активность пользователя." },
+        { "path": "AGENTS.md", "start_line": 27, "end_line": 30, "fact": "Renderer объявлен недоверенным; main обязан проверять каждый IPC payload." }
+      ]
+    }
+  ],
+  "resolved_questions": [
+    {
+      "question": "Как устроена архитектура codec и где проходят границы доверия?",
+      "disposition": "Codec работает в main. VaultMaterial содержит rootKey, salt и VaultId; storage хранит material отдельно от документа в сессии. Renderer получает VaultSnapshot с документом и идентификатором сессии, но контракт снимка не содержит material. На вход codec поступают недоверенные байты файлов и документы сохранения из IPC. Preload предоставляет фиксированный API, а main проверяет origin отправителя и форму внешней операции; полнота document validation рассматривается в vault-codec-001.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 43, "end_line": 53, "fact": "VaultMaterial включает rootKey, а DecodedVault возвращает его отдельно от document." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 19, "end_line": 30, "fact": "VaultSession и private Map хранят document и material в main." },
+        { "path": "electron-app/src/shared/contracts.ts", "start_line": 65, "end_line": 70, "fact": "VaultSnapshot содержит sessionId, path, displayName и document без rootKey/material." },
+        { "path": "electron-app/src/shared/contracts.ts", "start_line": 123, "end_line": 145, "fact": "Общий интерфейс задаёт операции vault/SSH/clipboard и не предоставляет renderer прямой filesystem или crypto API." },
+        { "path": "electron-app/src/preload/preload.ts", "start_line": 4, "end_line": 13, "fact": "Фиксированный API заморожен; открытие, создание и сохранение передаются через выделенные IPC-каналы." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 261, "end_line": 268, "fact": "Обёртка trusted проверяет protocol pmapp и hostname local перед вызовом обработчика; проверка не заменяет валидацию документа." }
+      ]
+    },
+    {
+      "question": "Можно ли получить plaintext или ослабить криптографию изменением незаверенного заголовка?",
+      "disposition": "Такой путь не установлен. Фиксированная длина/версия/suite/длина ciphertext и диапазоны KDF проверяются до derivation. SHA-256 заголовка служит только ранней проверкой: изменение digest не заменяет GCM-теги. Wrap AAD покрывает начало заголовка до WrappedDataKey; payload AAD включает остальной релевантный заголовок с документированными обнулёнными полями. Wrap final предшествует использованию dataKey, payload final предшествует чтению JsonLength и JSON.parse. Для reread дополнительно проверяются VaultId, KDF salt и параметры.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 81, "end_line": 90, "fact": "parseHeader предшествует deriveRootKey; при ошибке последующей аутентификации материал обнуляется." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 94, "end_line": 103, "fact": "verifyAndDecode сравнивает VaultId, salt и все параметры KDF с материалом открытой сессии." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 154, "end_line": 179, "fact": "Заголовок, digest, точная длина и диапазоны KDF проверяются до возврата параметров для derivation." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 190, "end_line": 204, "fact": "Оба AES-256-GCM используют 16-byte tags и AAD; обе final завершаются до разбора JSON." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 232, "end_line": 237, "fact": "Payload AAD копирует заголовок до digest и обнуляет WrappedDataKey, WrapTag и PayloadTag." },
+        { "path": "docs/vault-format.md", "start_line": 38, "end_line": 42, "fact": "Спецификация считает digest ранней проверкой повреждения и определяет те же два диапазона AAD." }
+      ]
+    },
+    {
+      "question": "Соответствуют ли KDF и ротация ключевого материала заявленному формату?",
+      "disposition": "В проверенном исходнике создаются Argon2id с 65536 KiB, 3 проходами, 4 lanes, salt 16 bytes и результатом 32 bytes; библиотечный исходник локально установленного hash-wasm фиксирует version 0x13 и тип id. При чтении допускаются только документированные ограниченные диапазоны; бинарное чтение даёт целые числа. Для каждой encodeVault генерируются новый 32-byte dataKey, 32-byte wrap salt и два 12-byte nonce, а KEK выводится HKDF-SHA-256 с доменным info. Argon2 выполняется hash-wasm, а AES/HKDF/RNG — node:crypto: требование использовать только крипто реализации pinned runtime соблюдается не буквально для Argon2; доказательств слабости самой выбранной реализации не найдено, внешний аудит зависимости и соответствие её установленного содержимого lock integrity не выполнялись.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 1, "end_line": 17, "fact": "AES/HKDF/RNG импортируются из node:crypto, argon2id — из hash-wasm; WRAP_INFO содержит домен v1/data-key-wrap." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 69, "end_line": 77, "fact": "createMaterial создаёт 16-byte salt и фиксированные параметры 65536/3/4." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 114, "end_line": 125, "fact": "Каждое сохранение генерирует новый dataKey и выводит 32-byte KEK через HKDF-SHA-256." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 226, "end_line": 229, "fact": "initializeHeader генерирует новый wrap salt и отдельные wrap/payload nonce при каждом вызове." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 240, "end_line": 263, "fact": "Пароль нормализуется NFC, Argon2id получает 32-byte output и ограниченные memory/iterations/parallelism." },
+        { "path": "electron-app/node_modules/hash-wasm/lib/argon2.ts", "start_line": 132, "end_line": 159, "fact": "Прочитанный локальный исходник зависимости задаёт version 0x13 и включает его в initVector." },
+        { "path": "electron-app/node_modules/hash-wasm/lib/argon2.ts", "start_line": 291, "end_line": 299, "fact": "Экспорт argon2id выбирает hashType id." },
+        { "path": "electron-app/package-lock.json", "start_line": 3457, "end_line": 3461, "fact": "lock закрепляет hash-wasm 4.12.0 и integrity; проверка фактических байтов пакета не выполнялась." },
+        { "path": "AGENTS.md", "start_line": 35, "end_line": 38, "fact": "Политика требует reviewed primitives из pinned runtime, конкретный Argon2id/AES набор и новую генерацию материала каждого save." },
+        { "path": "docs/vault-format.md", "start_line": 24, "end_line": 26, "fact": "Разрешённые при чтении диапазоны KDF совпадают с границами в validateKdf." }
+      ]
+    },
+    {
+      "question": "Какие гарантии очистки секретных Buffer действительно следуют из кода?",
+      "disposition": "Явно удерживаемые passwordBytes/derived, KEK/dataKey/plaintext и rootKey имеют очистку. disposeMaterial вызывается при ошибке decode и обычном закрытии storage-сессии. Полного обнуления всех временных копий нет: encode создаёт временный результат HKDF без отдельной очистки; decrypt копирует результат Buffer.concat unwrap и результаты decipher.update, не сохраняя их для fill(0); при final failure присваивание plaintext не выполняется. Кроме того, json при oversized encode выбрасывается до finally. Это отклонения от строгого правила временных Buffer, но самостоятельный доступ к остаткам требует способности читать память доверенного unlocked host; в данной модели это hardening/ограничение, а не установленная утечка через файл или renderer. Строки JSON и пароля также не имеют гарантированного стирания.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 106, "end_line": 118, "fact": "json создаётся и проверяется на размер до входа в finally, поэтому ранний throw не вызывает его fill(0)." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 123, "end_line": 123, "fact": "Результат HKDF копируется во второй Buffer KEK; промежуточный результат не сохраняется для очистки." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 138, "end_line": 151, "fact": "encode finally обнуляет именованные временные Buffer; disposeMaterial обнуляет rootKey, salt и VaultId." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 190, "end_line": 211, "fact": "unwrap и payload используют временные update/concat Buffer, тогда как finally очищает только kek, dataKey и присвоенный plaintext." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 254, "end_line": 258, "fact": "deriveRootKey возвращает отдельный rootKey Buffer и в finally обнуляет derived и passwordBytes." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 85, "end_line": 90, "fact": "decodeVault при ошибке после derivation вызывает disposeMaterial." },
+        { "path": "electron-app/src/main/vault/storage.ts", "start_line": 152, "end_line": 159, "fact": "Обычное закрытие удаляет сессию, очищает документ, material и sourceHash до освобождения lock." },
+        { "path": "AGENTS.md", "start_line": 41, "end_line": 42, "fact": "Требуется finally/fill(0) для временных Buffer и детерминированное уничтожение rootKey; строки явно не гарантируются стираемыми." },
+        { "path": "SECURITY.md", "start_line": 19, "end_line": 19, "fact": "Политика исключает malware, debugger и process dumps доверенного unlocked процесса." }
+      ]
+    },
+    {
+      "question": "Что гарантирует валидация документа и где обнаружены несоответствия без отдельного доказанного security impact?",
+      "disposition": "Известные поля проверяются на UUID, ссылки папок, циклы, глубину, диапазоны enum, длины строк, bool/settings и parseable timestamps. Отсутствующий allowLegacyAlgorithms мигрирует в false, не-булевое значение отвергается. Полная строгая схема отсутствует (ресурсное следствие отражено в finding). JSON.parse не обнаруживает duplicate keys вопреки спецификации; временные метки принимают Date.parse-совместимые строки без требования канонического UTC. hasUnpairedSurrogate пропускает последний одиночный high surrogate: charCodeAt за концом даёт NaN, а обе проверки диапазона с NaN ложны; к master password этот helper вообще не применяется. Это подтверждённые отклонения формата/валидации, но в просмотренных потребителях не установлен обход аутентификации или иной отдельный переход границы доверия за их счёт.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 271, "end_line": 322, "fact": "Перечислены проверки известных полей, enum, timestamps, settings и миграция SSH allowLegacyAlgorithms в false." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 326, "end_line": 369, "fact": "Проверяются ancestry и длины строк; validateUtc использует Date.parse, а hasUnpairedSurrogate не проверяет наличие второго code unit перед сравнением." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 199, "end_line": 203, "fact": "UTF-8 декодируется fatal, затем используется обычный JSON.parse без проверки повторяющихся ключей." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 240, "end_line": 242, "fact": "Master password кодируется Buffer.from после NFC без проверки непарных surrogate." },
+        { "path": "docs/vault-format.md", "start_line": 3, "end_line": 8, "fact": "Спецификация требует отказа для duplicate/unknown fields и invalid UTF-8/JSON, а для пароля — NFC и strict UTF-8." },
+        { "path": "docs/vault-format.md", "start_line": 56, "end_line": 58, "fact": "0 для autoLockMinutes документирован как отключение inactivity; отсутствующий legacy SSH boolean документирован как false." }
+      ]
+    },
+    {
+      "question": "Обеспечивает ли проверка SSH-полей в codec заявленное исключение управляющих символов?",
+      "disposition": "Нет: regexp в codec содержит двойное экранирование backslash перед u и поэтому не обозначает ожидаемый диапазон управляющих кодов Unicode. Аналогичный regexp повторён в SSH-service. Это подтверждённый дефект проверки строк, способный также отклонять обычные символы имени. Отдельная security-находка не заявлена: просмотренный потребитель передаёт host/username в структурированный ConnectConfig, требует native confirmation и проверяет SHA-256 host key; инъекция shell-команд, конкретный обход DNS/hostVerifier либо воспроизведённый обман native dialog не установлены. Для исправления нужны корректный regexp и негативные тесты, включая NUL/newline и отображение native confirmation.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 314, "end_line": 315, "fact": "Regexp host и userName использует двойные backslash перед u в классе символов вместо Unicode escape ожидаемого control range." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 13, "end_line": 14, "fact": "SSH-service определяет такой же CONTROL_CHARACTER regexp." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 36, "end_line": 49, "fact": "Потребитель повторно проверяет профиль строгой Zod-схемой, используя этот regexp." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 196, "end_line": 203, "fact": "Перед start SSH main требует подтверждение назначения и повторно сравнивает профиль." },
+        { "path": "electron-app/src/main/main.ts", "start_line": 246, "end_line": 258, "fact": "host и userName отображаются в native destination confirmation; эффект control characters на целевой Windows dialog не проверялся." },
+        { "path": "electron-app/src/main/services/ssh-terminal.ts", "start_line": 168, "end_line": 194, "fact": "Назначение и username передаются как поля ConnectConfig; hostVerifier сравнивает наблюдаемый SHA-256 с сохранённым fingerprint перед аутентификацией." }
+      ]
+    },
+    {
+      "question": "Что подтверждают назначенные тесты и какие проверки они не устанавливают?",
+      "disposition": "Прочитаны round-trip, отличающийся ciphertext каждого save, wrong password, короткий новый пароль, диапазон auto-lock и SSH migration/type tests. Mutation tests изменяют заголовок без пересчёта его SHA-256, поэтому большинство таких мутаций отвергаются уже digest-проверкой и не доказывают независимо AAD/GCM-защиту. Сам код AAD проверен отдельно. В назначенном тестовом файле нет независимых vectors Argon2/AES, header tamper с заново вычисленным digest, truncation/unsafe-KDF cases, глубоких/неизвестных JSON-полей и key-disposal failure tests. Отсутствие теста само по себе не считается уязвимостью; существующие тесты не запускались.",
+      "evidence": [
+        { "path": "electron-app/src/main/vault/codec.test.ts", "start_line": 45, "end_line": 67, "fact": "Тесты проверяют padded round-trip и различие ciphertext двух сохранений." },
+        { "path": "electron-app/src/main/vault/codec.test.ts", "start_line": 69, "end_line": 90, "fact": "Mutation cases XOR один байт без пересчёта digest; отдельно проверяются wrong password и короткий новый пароль." },
+        { "path": "electron-app/src/main/vault/codec.test.ts", "start_line": 92, "end_line": 136, "fact": "Оставшиеся тесты охватывают auto-lock и legacy SSH migration/type, но не структурный бюджет или отказные пути очистки." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 161, "end_line": 162, "fact": "Header digest проверяется до GCM, поэтому обычная header mutation может остановиться на этой ранней проверке." }
+      ]
+    },
+    {
+      "question": "Является ли открытие старого валидного vault или наличие публичных параметров в заголовке обходом защиты?",
+      "disposition": "Нет в принятой модели. Формат намеренно оставляет публичные suite/VaultId/KDF/salts/nonces/length в заголовке, а имена, settings и records находятся в зашифрованном VaultDocument. Свежий процесс не отличает старую корректно аутентифицированную копию без доверенного монотонного счётчика; это явно документированный остаточный риск. In-session digest conflict относится к storage и не заявляется как глобальная anti-rollback защита codec.",
+      "evidence": [
+        { "path": "docs/vault-format.md", "start_line": 19, "end_line": 36, "fact": "Бинарная схема явно задаёт публичный криптографический заголовок и ciphertext." },
+        { "path": "electron-app/src/shared/contracts.ts", "start_line": 21, "end_line": 63, "fact": "Имена, records, SSH-поля и settings входят в VaultDocument." },
+        { "path": "electron-app/src/main/vault/codec.ts", "start_line": 119, "end_line": 137, "fact": "Сериализованный document помещается в padded plaintext и шифруется payload AES-256-GCM до формирования файла." },
+        { "path": "docs/threat-model.md", "start_line": 29, "end_line": 31, "fact": "Threat model прямо указывает невозможность различить исторический валидный rollback после нового процесса без внешнего счётчика." }
+      ]
+    }
+  ],
+  "limitations": [
+    "Только offline static review исходного текста. Приложение, криптографические операции, тесты, сборки и PoC не запускались; network/apps, git history, реальные vault, environment secrets и результаты других модулей не читались.",
+    "Фактические OOM-пороги, задержки, поведение structuredClone на целевом Electron и сохранение разделяемых ссылок через contextBridge/IPC не измерены; finding отделяет подтверждённые отсутствующие лимиты и порядок операций от этих эксплуатационных параметров.",
+    "Полностью проверенными считаются только три назначенных файла. storage.ts, main.ts, preload.ts, SSH-service и локальный исходник hash-wasm использованы для проверки конкретных потребителей/контрмер; это не полная независимая проверка этих модулей или зависимости.",
+    "Установленная зависимость hash-wasm прочитана локально для проверки Argon2 version/type. Доверенность supply chain, соответствие node_modules lock integrity, runtime/OpenSSL и наличие независимых известных ответов не проверялись.",
+    "Остатки секретов в памяти после временных копий и ограничения стирания JavaScript strings отмечены отдельно; эксплуатация через administrator/debugger/unlocked-memory capture исключена supplied threat model и не добавлена как самостоятельная vulnerability."
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [
+    "electron-app",
+    "security-check/runs"
+  ],
+  "explicitExclusions": [
+    {
+      "pattern": "electron-app/**",
+      "reason": "Existing application changes belong to the independently completed module audit."
+    },
+    {
+      "pattern": "security-check/runs/**",
+      "reason": "Derived audit inputs/results; consumed as data and validated by reviewed merger."
+    }
+  ],
+  "includePaths": [
+    "scripts/security-check.ps1",
+    "scripts/security-check.py",
+    "scripts/test_security_check.py",
+    "security-check/modules.json",
+    "docs/security-check-workflow.md",
+    ".gitignore"
+  ],
+  "inventoryStrategy": "diff",
+  "mode": "working_tree",
+  "openQuestions": [
+    {
+      "question": "The first standalone full CLI audit should use a fresh run ID; current production audit ran through native isolated agents."
+    }
+  ],
+  "scanId": "passwordmanager-workflow-diff-20260915",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_0",
+      "label": "scripts/security-check.ps1",
+      "notes": "scripts/security-check.ps1:1 - Fresh ephemeral read-only sessions; fixed CLI flags; no shell-string evaluation of model JSON. RunId/module IDs are bounded. Process failure stops; merger propagates nonzero status.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_1",
+      "label": "scripts/security-check.py",
+      "notes": "scripts/security-check.py:1 - Strict module/result/decision schema, source hashes, exact line bounds, complete coverage, duplicate target closure, constrained supporting sources and output containment/link checks. Markdown values are escaped. An output hash is drift evidence, not a signature of model truth.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_2",
+      "label": "scripts/test_security_check.py",
+      "notes": "scripts/test_security_check.py:1 - Fifteen synthetic regression cases cover traversal, stale source, missing coverage/decisions, duplicate cycles, severity preservation, support-source drift and report escaping.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_3",
+      "label": "security-check/modules.json",
+      "notes": "security-check/modules.json:1 - Exactly one owner per active source file; explicit generated/binary exclusions. No real credentials or additional dependency introduced.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_4",
+      "label": "docs/security-check-workflow.md",
+      "notes": "docs/security-check-workflow.md:1 - Documents execution scope, process-only ExecutionPolicy flag, context-isolation limits, result codes and pre-v1 Deep Scan requirement.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_5",
+      "label": ".gitignore",
+      "notes": ".gitignore:1 - Only this task addition ignores Python bytecode under scripts; existing user modifications preserved.",
+      "receiptRefs": []
+    }
+  ]
+}

@@ -1,0 +1,490 @@
+{
+  "module_id": "renderer",
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "status": "complete",
+  "summary": "Полностью просмотрены все 14 назначенных файлов, включая UI-стенды. Подтверждён один дефект средней серьёзности: автоматические ответы xterm на команды SSH-сервера обновляют общий таймер активности и позволяют удалённому endpoint предотвращать автоблокировку всех открытых сейфов. Остальные проверенные границы и ограничения перечислены отдельно.",
+  "fully_reviewed_files": [
+    "electron-app/src/renderer/index.html",
+    "electron-app/src/renderer/src/App.vue",
+    "electron-app/src/renderer/src/components/FluentIcon.vue",
+    "electron-app/src/renderer/src/components/FolderTreeNode.vue",
+    "electron-app/src/renderer/src/components/TerminalSession.vue",
+    "electron-app/src/renderer/src/main.ts",
+    "electron-app/src/renderer/src/recordDraft.test.ts",
+    "electron-app/src/renderer/src/recordDraft.ts",
+    "electron-app/src/renderer/src/styles.css",
+    "electron-app/src/renderer/src/terminalAppearance.test.ts",
+    "electron-app/src/renderer/src/terminalAppearance.ts",
+    "electron-app/tests/terminal-renderer/fixture.ts",
+    "electron-app/tests/terminal-renderer/index.html",
+    "electron-app/tests/terminal-renderer/main.cjs"
+  ],
+  "findings": [
+    {
+      "id": "renderer-001",
+      "title": "SSH-сервер может сбрасывать таймер автоблокировки через автоматические ответы xterm",
+      "severity": "medium",
+      "confidence": "high",
+      "cwe": "CWE-613",
+      "summary": "Renderer передаёт все события terminal.onData в ssh-terminal:write. Такие события возникают не только при вводе пользователя: xterm автоматически отвечает на CSI 5 n. Общая обёртка trusted считает каждый вызов IPC активностью, поэтому регулярный запрос состояния от SSH-сервера удерживает lastActivity свежим и блокировка по бездействию не наступает.",
+      "attacker": "Злонамеренный либо скомпрометированный SSH endpoint, к которому пользователь уже разрешил подключение и подтвердил соответствующий ключ. Администратор Windows, локальное внедрение кода и обход проверки ключа не требуются.",
+      "prerequisites": "Установлен хотя бы один встроенный SSH-сеанс; открыт сейф с autoLockMinutes > 0; пользователь прекращает ввод, оставив приложение работающим. После установления соединения endpoint отправляет ESC[5n, например каждые 10 секунд. Это короче минимального положительного порога автоблокировки в одну минуту.",
+      "dataflow": "SSH stream data/stderr → SshTerminalManager.emitText → ssh-terminal:data → TerminalSession.vue:95-96 terminal.write → xterm CSI DSR parser → автоматический onData с ESC[0n → TerminalSession.vue:91-93 writeSshTerminal → preload.ts:14 ssh-terminal:write → main.ts:166 trusted → main.ts:261-262 lastActivity = Date.now() → main.ts:281 store.autoLockSessionIds(Date.now() - lastActivity). Один общий lastActivity применяется ко всем открытым сейфам.",
+      "root_cause": "Сигнал обмена протокольными байтами ошибочно используется как доказательство действий пользователя. TerminalSession передаёт одинаковым путём ввод клавиатуры и автоматические ответы терминала, а общий IPC wrapper безусловно обновляет lastActivity. Фильтры OSC-52 и OSC-0/1/2 не блокируют CSI-запрос состояния.",
+      "impact": "Удалённый SSH endpoint может неограниченно продлевать время, в течение которого все открытые сейфы и их сеансы остаются разблокированными после прекращения ввода. Это обход обещанного ограничения времени сеанса; сам по себе путь не предоставляет серверу чтение других записей и не доказывает эксфильтрацию. Учитывая необходимое заранее разрешённое SSH-соединение и ограниченный непосредственный ущерб, серьёзность medium.",
+      "counterevidence": "Перед SSH требуются native-подтверждение назначения и проверка ключа; поэтому случайный сетевой наблюдатель без доступа к разрешённому endpoint не выполняет атаку. При заблокированном/закрытом терминале onData не пересылается, а Windows lock/suspend/shutdown идут отдельным путём lockAll и не зависят от idle таймера. OSC-52 и изменения заголовка явно поглощаются. Эти контроли не мешают уже подключённому endpoint отправлять обычный CSI 5 n, а autoLockMinutes=0 и так намеренно отключает этот механизм.",
+      "validation": "Выполнена только статическая проверка. Продукт закрепляет @xterm/xterm 6.0.0 в electron-app/package.json:24 и electron-app/package-lock.json:1719-1723; локальный electron-app/node_modules/@xterm/xterm/package.json:2-6 также указывает 6.0.0 и lib/xterm.mjs. По отдельному разрешению координатора прочитан supporting исходник этой зависимости: electron-app/node_modules/@xterm/xterm/src/common/InputHandler.ts:256 регистрирует CSI n; electron-app/node_modules/@xterm/xterm/src/common/InputHandler.ts:2653-2666 отвечает на параметр 5 через triggerDataEvent(ESC[0n). electron-app/node_modules/@xterm/xterm/src/common/services/CoreService.ts:61-81 выдаёт onData при wasUserInput=false, а electron-app/node_modules/@xterm/xterm/src/common/services/OptionsService.ts:43 задаёт disableStdin:false; electron-app/src/renderer/src/components/TerminalSession.vue:57-81 не переопределяет эту опцию. electron-app/node_modules/@xterm/xterm/src/common/CoreTerminal.ts:131 передаёт событие; electron-app/node_modules/@xterm/xterm/src/common/CoreTerminal.ts:140-146 направляет write в parser. electron-app/node_modules/@xterm/xterm/src/browser/public/Terminal.ts:74 и electron-app/node_modules/@xterm/xterm/src/browser/public/Terminal.ts:227-228 связывают публичные onData/write с core. Это замыкает цепочку без предположения о синтетическом DOM-событии. Приложение, сервер и тесты не запускались; выдержка из зависимости является статическим подтверждением поведения, а не результатом PoC.",
+      "remediation": "Не обновлять пользовательский таймер в общей обёртке trusted и при ssh-terminal:write/resize/close, поскольку эти IPC могут возникать без ввода. Считать активностью отдельные события реального взаимодействия с интерфейсом; отделить протокольные ответы xterm от пользовательского ввода. Добавить регрессионную проверку: подключённый синтетический сервер регулярно посылает CSI 5 n без действий пользователя; все сейфы с истёкшим autoLockMinutes должны закрыться. Отдельно проверить, что настоящий ввод корректно продлевает сеанс, а Windows lock/suspend по-прежнему закрывает его.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 86,
+          "end_line": 103,
+          "fact": "Поглощаются только перечисленные OSC; входящий SSH-текст передаётся terminal.write, а любой onData подключённого терминала вызывает writeSshTerminal. Проверенное supporting поведение onData для автоматического CSI-ответа описано с точными dependency paths в validation."
+        },
+        {
+          "path": "electron-app/src/preload/preload.ts",
+          "start_line": 13,
+          "end_line": 15,
+          "fact": "writeSshTerminal без признака происхождения данных вызывает ssh-terminal:write."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 138,
+          "end_line": 146,
+          "fact": "Байты stdout/stderr подключённого SSH-сеанса поступают в emitText."
+        },
+        {
+          "path": "electron-app/src/main/services/ssh-terminal.ts",
+          "start_line": 204,
+          "end_line": 207,
+          "fact": "emitText делит входящий текст на блоки и передаёт ssh-terminal:data без удаления CSI-команд."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 22,
+          "end_line": 23,
+          "fact": "lastActivity является общим состоянием main-процесса, а не отдельного сейфа."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 165,
+          "end_line": 168,
+          "fact": "ssh-terminal:write регистрируется через общую обёртку trusted."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 261,
+          "end_line": 262,
+          "fact": "trusted обновляет lastActivity перед каждым переданным IPC handler без проверки факта пользовательского ввода."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 277,
+          "end_line": 287,
+          "fact": "Решение об idle-блокировке всех сеансов использует Date.now() - lastActivity."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 166,
+          "end_line": 169,
+          "fact": "Положительный autoLockMinutes каждого сеанса сравнивается с переданным общим временем бездействия."
+        },
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 288,
+          "end_line": 289,
+          "fact": "autoLockMinutes допускает только целые значения 0-240; минимальное включённое значение равно одной минуте."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 196,
+          "end_line": 217,
+          "fact": "Перед подключением проверяются main-owned профиль и пользовательские native-подтверждения, включая первое доверие ключу."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 43,
+          "end_line": 46,
+          "fact": "Windows lock/suspend/shutdown вызывают lockAll отдельно от периодического idle-механизма."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 270,
+          "end_line": 274,
+          "fact": "lockAll закрывает SSH и сейфы и сообщает renderer о блокировке независимо от lastActivity."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 81,
+          "end_line": 99,
+          "fact": "Renderer уже имеет отдельные pointerdown/keydown/wheel уведомления активности; данные терминала не обязаны выполнять эту роль."
+        },
+        {
+          "path": "electron-app/package.json",
+          "start_line": 24,
+          "end_line": 24,
+          "fact": "Продукт закрепляет версию @xterm/xterm 6.0.0, поведение которой проверено в установленном supporting исходнике."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 1719,
+          "end_line": 1723,
+          "fact": "Lockfile закрепляет версию и integrity артефакта @xterm/xterm 6.0.0."
+        }
+      ]
+    }
+  ],
+  "resolved_questions": [
+    {
+      "question": "Вставляются ли поля сейфа, SSH-вывод или URL как исполняемый HTML?",
+      "disposition": "Подтверждённого пути DOM-инъекции не найдено: имена/поля выводятся через Vue-интерполяции и form bindings; URL редактируется как текст. SSH-вывод передаётся xterm.write. Source index.html получает CSP через Vite transform и main response header, поэтому отсутствие CSP meta в исходном HTML само по себе не является дефектом.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 533,
+          "end_line": 557,
+          "fact": "Имена выводятся интерполяцией; пароль и URL привязаны к input, URL не используется как href/src."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/FolderTreeNode.vue",
+          "start_line": 14,
+          "end_line": 20,
+          "fact": "Имена папок интерполируются в текст; рекурсивный компонент не создаёт HTML из имени."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/FluentIcon.vue",
+          "start_line": 5,
+          "end_line": 44,
+          "fact": "Иконки выбираются из статически описанных SVG-шаблонов."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 95,
+          "end_line": 96,
+          "fact": "Удалённый вывод направляется в parser xterm, а не в HTML sink."
+        },
+        {
+          "path": "electron-app/src/shared/content-security-policy.ts",
+          "start_line": 1,
+          "end_line": 6,
+          "fact": "Общая CSP запрещает сети/frames/objects и inline scripts, оставляя inline CSS для xterm."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 9,
+          "end_line": 15,
+          "fact": "Vite добавляет общую CSP в meta построенного HTML."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 65,
+          "end_line": 74,
+          "fact": "Та же CSP добавляется в response headers."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 91,
+          "end_line": 100,
+          "fact": "Продукт включает sandbox/contextIsolation/webSecurity и отключает nodeIntegration/webviewTag."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 112,
+          "end_line": 114,
+          "fact": "Навигация, новые окна и webview запрещены."
+        }
+      ]
+    },
+    {
+      "question": "Можно ли обойти подтверждение SSH или заменить закреплённый ключ через renderer?",
+      "disposition": "Проверенный путь сохраняет доверенное решение в main: renderer передаёт только идентификаторы и геометрию. UI-подтверждение legacy является дополнительным; main повторно показывает native-предупреждение. Fingerprint из renderer при сохранении ограничивается main-owned состоянием для того же назначения.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 140,
+          "end_line": 149,
+          "fact": "Запрос запуска содержит terminalId/vaultSessionId/recordId и cols/rows, без credentials или fingerprint."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 324,
+          "end_line": 337,
+          "fact": "Включение legacy требует явного действия в UI, отключение доступно отдельно."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 196,
+          "end_line": 224,
+          "fact": "Назначение берётся из store, повторно сравнивается после native dialogs; первое доверие сохраняется main."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 232,
+          "end_line": 258,
+          "fact": "Main имеет отдельные native-подтверждения назначения и legacy с default/cancel на отказ."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 85,
+          "end_line": 90,
+          "fact": "Renderer-документ проходит validation и constrainSshFingerprints до сохранения."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 278,
+          "end_line": 285,
+          "fact": "Для неизменного host/port сохраняется старый main-owned fingerprint; для нового назначения он сбрасывается."
+        }
+      ]
+    },
+    {
+      "question": "Достаточны ли видимые OSC/clipboard контроли для их заявленного узкого назначения?",
+      "disposition": "OSC-52 и переименование заголовков явно поглощаются, стандартные UI-пути копирования терминала вызывают main-managed conditional clear. Это не устраняет renderer-001, использующий CSI. Windows clipboard history/roaming остаются документированным ограничением; проверка не утверждает безопасность всех нативных способов копирования.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 86,
+          "end_line": 90,
+          "fact": "OSC 52/0/1/2 перехватываются обработчиками, возвращающими true."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 226,
+          "end_line": 247,
+          "fact": "Копирование выделения и контекстное меню направлены в узкие preload API с временем очистки."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 169,
+          "end_line": 177,
+          "fact": "Native-меню копирует через writeClipboardWithConditionalClear и ограничивает размер selection."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 309,
+          "end_line": 328,
+          "fact": "Буфер очищается по таймеру только при совпадении SHA-256 текущего содержимого с ранее записанным."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 14,
+          "end_line": 14,
+          "fact": "Подавление Windows clipboard history/roaming явно не реализовано и указано как ограничение."
+        }
+      ]
+    },
+    {
+      "question": "Остаются ли активные компоненты и подписки терминала после обычной обработки блокировки?",
+      "disposition": "При полученном событии блокировки Vue убирает соответствующие terminalTabs, а TerminalSession при unmount отписывается, закрывает SSH и dispose-ит xterm. Clear-функции снимают ссылки и очищают основные secret fields; это не является гарантией физического стирания JS-строк. Отдельная гонка незавершённого open рассматривается ниже.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 91,
+          "end_line": 99,
+          "fact": "onLock вызывает clearRendererSecrets; onVaultLocked вызывает removeLockedVault."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 437,
+          "end_line": 466,
+          "fact": "При блокировке удаляются вкладки, draft и основные secret fields; полная блокировка очищает dialogState."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 126,
+          "end_line": 138,
+          "fact": "Unmount отписывается от событий, прекращает observer, закрывает SSH и dispose-ит xterm."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 166,
+          "end_line": 168,
+          "fact": "Поздний успешный SSH result после unmount вызывает закрытие терминала."
+        },
+        {
+          "path": "electron-app/src/renderer/src/recordDraft.ts",
+          "start_line": 17,
+          "end_line": 23,
+          "fact": "Переключение SSH-записи на другой тип удаляет ssh payload."
+        },
+        {
+          "path": "electron-app/src/renderer/src/recordDraft.test.ts",
+          "start_line": 54,
+          "end_line": 62,
+          "fact": "Имеется статически просмотренный тест удаления hidden SSH secrets при смене типа."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 9,
+          "end_line": 9,
+          "fact": "Модель отдельно оговаривает невозможность гарантировать неперемещаемую/невыгружаемую JS-память."
+        }
+      ]
+    },
+    {
+      "question": "Связан ли отображённый HIBP-результат с текущим значением поля пароля?",
+      "disposition": "Есть ограничение корректности UI: после await проверяется только идентичность draft, но не неизменность пароля; обычный v-model также не сбрасывает breach metadata при изменении значения. Поэтому результат для прежнего значения может остаться рядом с новым. Отдельная атакующая сторона и нарушение разрешённого сетевого назначения этим кодом не доказаны; в findings не включено. Согласие по-прежнему получает и сохраняет main, а сетевой сбой UI обозначает как «не проверено».",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 269,
+          "end_line": 289,
+          "fact": "Пароль снимается до await; затем проверяется только draft identity и результат записывается в breach. Failed отображается как непроверенное состояние."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 554,
+          "end_line": 556,
+          "fact": "Изменение password через v-model не содержит сброса breach status/message."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 566,
+          "end_line": 568,
+          "fact": "SSH-password имеет ту же привязку без invalidation результата."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 143,
+          "end_line": 159,
+          "fact": "HIBP запросу предшествует проверка сохранённого согласия или native-подтверждение."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 85,
+          "end_line": 90,
+          "fact": "При сохранении renderer не может самостоятельно изменить main-owned hibpConsent."
+        }
+      ]
+    },
+    {
+      "question": "Может ли поздний open/create snapshot появиться после события блокировки?",
+      "disposition": "Статически подтверждён пробел отмены: submitVaultDialog без проверки актуальности операции вызывает addTab после await; onLock очищает состояние, но не отмечает незавершённый запрос отменённым. Main closeAll закрывает только уже зарегистрированные сеансы, а open может зарегистрировать новый позже. Передано интеграции для совместной оценки с vault-storage/electron-boundary. Здесь не заявляется отдельная подтверждённая эксплуатация: влияние гонки на поддерживаемой Windows-платформе не воспроизводилось, а одно предположение о доступе к доверенному разблокированному host недостаточно для finding.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 128,
+          "end_line": 149,
+          "fact": "submitVaultDialog удерживает локальный state, ожидает open/create и без generation/state guard вызывает addTab."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 158,
+          "end_line": 164,
+          "fact": "addTab вставляет полученный snapshot и делает его активным."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 466,
+          "end_line": 466,
+          "fact": "clearRendererSecrets сбрасывает UI-ссылки, но не вводит отмену pending open/create."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 270,
+          "end_line": 274,
+          "fact": "Событие app:lock отправляется после store.closeAll."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 32,
+          "end_line": 41,
+          "fact": "open асинхронно читает/декодирует файл и регистрирует сеанс после ожиданий."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 162,
+          "end_line": 175,
+          "fact": "closeAll перечисляет текущие session keys; addSession не проверяет эпоху блокировки."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 5,
+          "end_line": 5,
+          "fact": "Разблокированный Windows-account/process является доверенной зависимостью; это ограничивает самостоятельную квалификацию ущерба."
+        }
+      ]
+    },
+    {
+      "question": "Могут ли дерево папок, цвета или UI-стенды сами по себе расширить возможности атакующего?",
+      "disposition": "Подтверждённого самостоятельного пути не найдено. Рекурсивное дерево получает документ, чья ancestry проверяется main; terminal colors допускают только полную hex-форму перед передачей xterm. Стенды используют синтетический bridge и намеренные CSP-negative probes. Их executeJavaScript/capturePage выполняются trusted тестовым main над синтетическим содержимым; это не доказательство соответствующей production-возможности.",
+      "evidence": [
+        {
+          "path": "electron-app/src/renderer/src/components/FolderTreeNode.vue",
+          "start_line": 6,
+          "end_line": 20,
+          "fact": "Рекурсия строится из folder parentId и Vue-компонентов."
+        },
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 283,
+          "end_line": 287,
+          "fact": "Перед использованием документа проверяется root и ancestry всех папок."
+        },
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 326,
+          "end_line": 337,
+          "fact": "Циклы, отсутствующие родители и глубина более 64 отвергаются."
+        },
+        {
+          "path": "electron-app/src/renderer/src/terminalAppearance.ts",
+          "start_line": 5,
+          "end_line": 13,
+          "fact": "Принимаются только полные #RRGGBB цвета, иначе фиксированный fallback."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 30,
+          "end_line": 53,
+          "fact": "xterm theme получает нормализованные foreground/background."
+        },
+        {
+          "path": "electron-app/tests/terminal-renderer/fixture.ts",
+          "start_line": 5,
+          "end_line": 31,
+          "fact": "Fixture задаёт синтетический frozen bridge без production vault/credential IPC."
+        },
+        {
+          "path": "electron-app/tests/terminal-renderer/fixture.ts",
+          "start_line": 134,
+          "end_line": 148,
+          "fact": "Inline script, remote style и OSC/HTML строки намеренно используются как отрицательные CSP/terminal проверки."
+        },
+        {
+          "path": "electron-app/tests/terminal-renderer/main.cjs",
+          "start_line": 21,
+          "end_line": 35,
+          "fact": "Тестовый main использует sandboxed offscreen window и сохраняет результат/снимок синтетического стенда; он не обращается к vault."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 44,
+          "end_line": 44,
+          "fact": "Диагностический badge зависит от build-defined значения."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 473,
+          "end_line": 477,
+          "fact": "При diagnostic сборке badge видимо включается в header."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 17,
+          "end_line": 19,
+          "fact": "Значение PM_SCREENSHOT_DIAGNOSTICS определяется на этапе сборки renderer."
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Аудит статический и offline: приложение, тесты, Electron и SSH-сервер не запускались; фактическая эксплуатация и поведение Windows не заявляются как воспроизведённые.",
+    "После отдельного разрешения координатора прочитан supporting исходник установленного @xterm/xterm 6.0.0 для проверки автоматических DSR-ответов. Его пути и точные строки приведены в validation renderer-001; node_modules не входит в manifest/source_digest и не включён в fully_reviewed_files.",
+    "Связанные main/preload/storage/CSP файлы читались только для установления потребителей, доверенных подтверждений и контрдоказательств; полнота их самостоятельного модульного аудита здесь не заявляется.",
+    "Гонка позднего open/create после lock требует интеграционного решения; конкретное нарушение границы для внешнего атакующего в этом модуле отдельно не подтверждено.",
+    "Результаты других модулей, реальные vault-файлы, ключи, credentials, signing material и runtime-данные не читались. Изменений исходников не делалось."
+  ]
+}

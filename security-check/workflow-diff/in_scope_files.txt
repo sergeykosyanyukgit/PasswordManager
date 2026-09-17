@@ -1,0 +1,6 @@
+scripts/security-check.ps1
+scripts/security-check.py
+scripts/test_security_check.py
+security-check/modules.json
+docs/security-check-workflow.md
+.gitignore

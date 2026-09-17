@@ -1,0 +1,325 @@
+{
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "decisions": [
+    {
+      "finding_id": "electron-boundary-001",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждён поздний addSession/addTab после lockAll: начатые open/create не инвалидируются. Severity снижен до low: нужен уже авторизованный ввод пароля и определённое чередование; удалённое чтение данных или обход Windows lock не установлены. Pending SSH — связанный пробел отмены, ограниченный поздним close renderer.",
+      "severity": "low",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 270,
+          "end_line": 274,
+          "fact": "Блокировка обходит существующие менеджеры без отмены pending операций."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 32,
+          "end_line": 41,
+          "fact": "Материал и сессия регистрируются после внешних ожиданий."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 143,
+          "end_line": 146,
+          "fact": "Поздний snapshot без проверки эпохи возвращается в tabs."
+        }
+      ]
+    },
+    {
+      "finding_id": "electron-boundary-002",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждена зависимость скрытия данных от внешнего файлового I/O. Очистка ключей main происходит до await, но renderer удаляет открытые данные только после завершения releaseLock. Контролирующая задержки общая папка может отложить обещанную автоблокировку интерфейса; конкретные Windows/SMB сроки не измерялись.",
+      "severity": "medium",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 277,
+          "end_line": 293,
+          "fact": "UI уведомляется после await store.close."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 152,
+          "end_line": 159,
+          "fact": "Удаление main-сессии предшествует файловому ожиданию."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 208,
+          "end_line": 210,
+          "fact": "close и unlink не ограничены временем."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 91,
+          "end_line": 97,
+          "fact": "Именно событие main запускает скрытие renderer."
+        }
+      ]
+    },
+    {
+      "finding_id": "electron-boundary-003",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждено отсутствие условной очистки clipboard при нормальном выходе. Таймер привязан к процессу, тогда как скопированное значение принадлежит системному clipboard. Возможен последующий случайный paste; гарантированное чтение третьей стороной не утверждается.",
+      "severity": "low",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 49,
+          "end_line": 50,
+          "fact": "При выходе закрываются только менеджеры SSH и vault."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 309,
+          "end_line": 328,
+          "fact": "Единственная условная очистка после copy выполняется отложенным unref-таймером."
+        }
+      ]
+    },
+    {
+      "finding_id": "vault-codec-001",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждены отсутствие общей структурной квоты и принятие неизвестных полей до structuredClone/JSON.stringify. Файловый вход требует валидной аутентификации созданного атакующим vault; IPC-вариант требует контроля renderer. Severity снижен до low из-за ограниченного воздействия на доступность, существенных предпосылок и неизмеренного OOM-порога. Обход GCM не обнаружен.",
+      "severity": "low",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 198,
+          "end_line": 204,
+          "fact": "JSON.parse предшествует проверке структуры."
+        },
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 271,
+          "end_line": 291,
+          "fact": "Неизвестные поля и общий граф не ограничены."
+        },
+        {
+          "path": "electron-app/src/main/vault/codec.ts",
+          "start_line": 106,
+          "end_line": 111,
+          "fact": "Проверка размера следует за JSON.stringify и Buffer.from."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 85,
+          "end_line": 92,
+          "fact": "Входной документ целиком клонируется и кодируется."
+        }
+      ]
+    },
+    {
+      "finding_id": "vault-storage-001",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждены окна между проверкой temp/источника и pathname rename. Проверки обнаруживают предшествующую подмену, но не связывают проверенный файловый объект с публикацией. Отчёт ограничен нарушением гарантий конфликта/фиксации при праве изменять общую папку; раскрытие plaintext и обход GCM не утверждаются.",
+      "severity": "medium",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 95,
+          "end_line": 116,
+          "fact": "Проверенные копии temp и source отделены от последующего rename."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 221,
+          "end_line": 228,
+          "fact": "Дескриптор temp закрывается до его публикации."
+        }
+      ]
+    },
+    {
+      "finding_id": "vault-storage-002",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждено отдельное окно create: ENOENT проверяется до KDF, а публикация использует заменяющий rename. Сохранение требует условной проверки версии, создание — операции без замены; различие контроля и исправления сохраняет отдельную находку. Точное чередование на Windows не воспроизводилось.",
+      "severity": "medium",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 51,
+          "end_line": 66,
+          "fact": "Между проверкой отсутствия и публикацией есть асинхронные операции."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 231,
+          "end_line": 234,
+          "fact": "Публикация не использует create-if-absent."
+        }
+      ]
+    },
+    {
+      "finding_id": "vault-storage-003",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждено отсутствие повторной проверки владения lock и удаление текущего имени по старому handle. Severity/confidence откалиброваны до low/medium: нужны права или SMB-семантика, позволяющие заменить lock; конкретная локальная конфигурация не исследована. Стабильный lock и sourceHash ограничивают обычного второго writer.",
+      "severity": "low",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 199,
+          "end_line": 210,
+          "fact": "wx устанавливает начальную эксклюзивность, release удаляет имя без проверки владельца."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 85,
+          "end_line": 116,
+          "fact": "save не использует lockHandle/lockPath для проверки сохранённого владения."
+        }
+      ]
+    },
+    {
+      "finding_id": "vault-storage-004",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждён незавершённый rollback открытия: addSession предшествует cleanup, catch освобождает lock, но оставляет session/material. Прямой доступ к скрытому случайному ID не установлен; отчёт ограничен остаточным состоянием и влиянием старой сессии на владение lock при повторном открытии.",
+      "severity": "low",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 38,
+          "end_line": 47,
+          "fact": "После публикации сессии cleanup может бросить ошибку; rollback освобождает только lock."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 237,
+          "end_line": 255,
+          "fact": "readdir/read являются падающими await."
+        },
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 152,
+          "end_line": 175,
+          "fact": "Скрытая сессия остаётся в коллекции и позднее закрывается по старому пути lock."
+        }
+      ]
+    },
+    {
+      "finding_id": "vault-storage-005",
+      "disposition": "duplicate",
+      "duplicate_of": "electron-boundary-001",
+      "reason": "Дубликат electron-boundary-001: тот же переход closeAll против pending open/create, та же регистрация addSession и необходимая отмена по поколению. Все исходные доказательства сохранены при объединении.",
+      "severity": null,
+      "confidence": null,
+      "evidence": [
+        {
+          "path": "electron-app/src/main/vault/storage.ts",
+          "start_line": 162,
+          "end_line": 175,
+          "fact": "closeAll обходит имеющиеся IDs; поздний addSession не проверяет отмену."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 143,
+          "end_line": 146,
+          "fact": "Общий конечный эффект — безусловный addTab после await."
+        }
+      ]
+    },
+    {
+      "finding_id": "hibp-001",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "reason": "Подтверждено несовпадение проверяемого значения с используемым паролем: NFC применяется только в HIBP-пути, тогда как запись/копирование используют исходную строку. Условие присутствия конкретной формы в реальном корпусе HIBP не проверялось, поэтому не заявляется подтверждённый случай утёкшего пользовательского пароля.",
+      "severity": "low",
+      "confidence": "high",
+      "evidence": [
+        {
+          "path": "electron-app/src/main/services/hibp.ts",
+          "start_line": 7,
+          "end_line": 13,
+          "fact": "SHA-1 вычисляется после изменения Unicode-последовательности."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 269,
+          "end_line": 277,
+          "fact": "В HIBP направляется пароль записи."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 554,
+          "end_line": 556,
+          "fact": "Копируется исходное значение draft.password."
+        }
+      ]
+    },
+    {
+      "finding_id": "renderer-001",
+      "disposition": "confirmed",
+      "duplicate_of": null,
+      "severity": "medium",
+      "confidence": "high",
+      "reason": "Независимо подтверждён весь путь от DSR-байтов уже разрешённого SSH endpoint до общего lastActivity. xterm генерирует onData даже при wasUserInput=false; приложение не различает происхождение этих данных. Прямой доступ сервера к другим записям не установлен, но удалённый участник действительно может обойти auto-lock всех открытых сейфов без локального кода или ввода пользователя.",
+      "evidence": [
+        {
+          "path": "electron-app/node_modules/@xterm/xterm/src/common/InputHandler.ts",
+          "start_line": 2653,
+          "end_line": 2666,
+          "fact": "CSI DSR вызывает автоматический triggerDataEvent."
+        },
+        {
+          "path": "electron-app/node_modules/@xterm/xterm/src/common/services/CoreService.ts",
+          "start_line": 61,
+          "end_line": 81,
+          "fact": "onData выдаётся и для wasUserInput=false при включённом stdin."
+        },
+        {
+          "path": "electron-app/node_modules/@xterm/xterm/src/common/CoreTerminal.ts",
+          "start_line": 131,
+          "end_line": 131,
+          "fact": "Событие coreService.onData пересылается в публичный канал."
+        },
+        {
+          "path": "electron-app/node_modules/@xterm/xterm/src/browser/public/Terminal.ts",
+          "start_line": 74,
+          "end_line": 74,
+          "fact": "Публичный onData возвращает core.onData."
+        },
+        {
+          "path": "electron-app/src/renderer/src/components/TerminalSession.vue",
+          "start_line": 86,
+          "end_line": 97,
+          "fact": "Входной write вызывает onData; приложение пересылает каждый такой ответ через preload."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 261,
+          "end_line": 262,
+          "fact": "Каждый доверенный IPC автоматически обновляет общий lastActivity."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 277,
+          "end_line": 287,
+          "fact": "Общий lastActivity используется при выборе истёкших сеансов."
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Проверка интеграции выполнена координатором по исходникам независимо от контекстов модульных агентов; эксплуатационные сценарии Windows/SMB не запускались.",
+    "Модульные исходные severity сохранены в results/ и combined.json; окончательные оценки задаются решениями интеграции.",
+    "Исходный код приложения в рамках этой задачи не изменялся."
+  ]
+}

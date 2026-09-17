@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "scope": "electron-app",
+  "context": ["AGENTS.md", "SECURITY.md", "docs/threat-model.md", "docs/vault-format.md"],
+  "excluded_directories": ["node_modules", "dist", "release", "artifacts", ".runtime-probe"],
+  "excluded_extensions": [".png", ".ico"],
+  "modules": [
+    {"id": "vault-codec", "paths": ["electron-app/src/main/vault/codec*.ts", "electron-app/src/shared/contracts.ts"], "focus": "Vault format, Argon2id, HKDF, AES-GCM, AAD, key disposal, bounds and document validation. Independently map architecture and trace consumers; preserve the supplied threat model."},
+    {"id": "vault-storage", "paths": ["electron-app/src/main/vault/storage*.ts"], "focus": "Encrypted atomic save, authenticated reread, writer locks, source conflicts, hostile local/SMB metadata, session lifecycle and cleanup."},
+    {"id": "electron-boundary", "paths": ["electron-app/src/main/main.ts", "electron-app/src/preload/*.ts", "electron-app/src/shared/content-security-policy.ts", "electron-app/src/main/services/capture-protection*.ts"], "focus": "Untrusted renderer, IPC sender and payload validation, protocol/CSP, navigation, capture gate, clipboard, auto-lock and shutdown. Independently map the actual architecture and trust boundaries."},
+    {"id": "ssh-terminal", "paths": ["electron-app/src/main/services/ssh-terminal*.ts"], "focus": "SSH destinations, algorithm allowlists, TOFU and changed-key rejection, credentials, terminal data bounds, session ownership and cleanup."},
+    {"id": "hibp", "paths": ["electron-app/src/main/services/hibp.ts"], "focus": "Explicit consent at callers, prefix-only padded HIBP request, redirects, response limits, timeouts, logging, indeterminate failures."},
+    {"id": "renderer", "paths": ["electron-app/src/renderer/**", "electron-app/tests/**"], "focus": "Vue secret lifecycle, auto-lock, trusted confirmation boundaries, record mutations, DOM injection, embedded xterm, OSC-52, clipboard and URLs."},
+    {"id": "build-release", "paths": ["electron-app/package*.json", "electron-app/*config*.ts", "electron-app/tsconfig*.json", "electron-app/scripts/**"], "focus": "Pinned dependencies, packaging inputs, signing and signature verification, diagnostic/release separation, compiled security controls and test-only surfaces. Static review only; do not infer current CVEs from memory."}
+  ]
+}

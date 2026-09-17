@@ -1,0 +1,17 @@
+{
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "captured_at": "2026-09-15T08:37:19.668742+00:00",
+  "supporting_digest": "540d10e3dabbefd69ec70b4585f44d3eac438b7203422b052e7b79b2be24456a",
+  "hashes": {
+    "README.md": "677f33abda9abad6bb466d30499d4bda6acfce264023fc9bd8245585cc93683b",
+    "electron-app/node_modules/@xterm/xterm/src/browser/public/Terminal.ts": "8a84fca4931f36414091e744189e7ccae667fae499e3d2c340e847f8c4114d29",
+    "electron-app/node_modules/@xterm/xterm/src/common/CoreTerminal.ts": "538d1740cb2c1e1d1af7b58aac3518dba5c29ea83b4dad60b41a05333b7ca749",
+    "electron-app/node_modules/@xterm/xterm/src/common/InputHandler.ts": "b03afd5d38dd708440699e81135f1735626d55ffdf24621fbd54cfbc41320925",
+    "electron-app/node_modules/@xterm/xterm/src/common/input/WriteBuffer.ts": "c1c7726e5271fd37f254768a3a21323c1edc2a9bef52a55800dc20652285910f",
+    "electron-app/node_modules/@xterm/xterm/src/common/services/CoreService.ts": "c6320a5a42790887b6806326fb4b8949d45bf58cb2e1526797d40c87ebe696e3",
+    "electron-app/node_modules/hash-wasm/lib/argon2.ts": "d38966433096181fbf6977aa9e56607f46b0e4ed6ef901751bc3021acc5877cc",
+    "electron-app/node_modules/ssh2/lib/client.js": "edd3484daa9d942bc5a6412edc9cf11f85df40b2db10b07877bbfe694beac7f4",
+    "electron-app/node_modules/ssh2/lib/protocol/kex.js": "054ba4b81801596350f0e2e939746d2966297cffd4303b342c25b2fd5d295755"
+  }
+}

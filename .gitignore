@@ -15,4 +15,9 @@ publish/
 *.pmvault.*.tmp
 src/PasswordManager.App/Terminal/node_modules/
 src/PasswordManager.App/Terminal/dist/
-
+electron-app/node_modules/
+electron-app/dist/
+electron-app/release/
+electron-app/artifacts/
+electron-app/.runtime-probe/
+scripts/__pycache__/

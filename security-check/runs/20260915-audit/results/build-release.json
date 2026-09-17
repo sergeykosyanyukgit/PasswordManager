@@ -1,0 +1,381 @@
+{
+  "module_id": "build-release",
+  "run_id": "20260915-audit",
+  "source_digest": "585f6b58f31b514080848125eff5801eaadcbcdd86fa2a86a78a7858ed90fd33",
+  "status": "complete",
+  "summary": "Все девять назначенных файлов проверены статически, включая все записи package-lock.json. Подтверждённых уязвимостей с пересечением заявленной границы доверия не обнаружено. Зафиксированы работающие ограничения сборки и проверки подписи, а также ограничения ручного процесса выпуска; управление средой сборки и подписи остаётся обязанностью доверенного оператора.",
+  "fully_reviewed_files": [
+    "electron-app/package-lock.json",
+    "electron-app/package.json",
+    "electron-app/scripts/build.mjs",
+    "electron-app/scripts/sign.ps1",
+    "electron-app/scripts/test-terminal.mjs",
+    "electron-app/tsconfig.json",
+    "electron-app/tsconfig.node.json",
+    "electron-app/vite.config.ts",
+    "electron-app/vitest.config.ts"
+  ],
+  "findings": [],
+  "resolved_questions": [
+    {
+      "question": "Зафиксированы ли версии и источники npm-зависимостей?",
+      "disposition": "Да. Проверены корневая запись и все 426 записей пакетов lockfile. Все прямые зависимости совпадают между package.json, корнем lockfile и установленной в lockfile версией. У каждой записи пакета точная версия, URL https://registry.npmjs.org с путём соответствующего имени и версии и синтаксически корректный SHA-512 integrity длиной 64 байта после декодирования. Дублирующихся JSON-ключей нет. Проверка прочитала только текст JSON; скачивание и сверка фактических архивов не выполнялись. Диапазоны в зависимостях сторонних пакетов не отменяют точные разрешённые версии в lockfile.",
+      "evidence": [
+        {
+          "path": "electron-app/package.json",
+          "start_line": 22,
+          "end_line": 42,
+          "fact": "Все прямые production- и development-зависимости заданы точными версиями."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 1,
+          "end_line": 31,
+          "fact": "Lockfile версии 3 содержит корневой манифест с теми же прямыми зависимостями."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 32,
+          "end_line": 5752,
+          "fact": "Полный диапазон 426 записей пакетов, проверенный на точные версии, соответствующие npm HTTPS URL и корректный SHA-512 integrity; исключений не найдено."
+        }
+      ]
+    },
+    {
+      "question": "Позволяет ли lockfile заключить, что выполнены проверка лицензий и актуальный vulnerability review?",
+      "disposition": "Нет. Метаданные lockfile не заменяют актуальную проверку advisory и содержимого поставляемых зависимостей. У buildcheck, cpu-features и ssh2 отсутствует поле license; это вопрос проверки лицензий, а не доказательство отсутствия лицензии или уязвимости. glob и inflight содержат предупреждения deprecated и помечены dev; такие предупреждения сами по себе не устанавливают применимый CVE или путь эксплуатации в продукте. Никакие CVE по памяти не приписывались. Наличие install scripts означает, что установка зависимостей исполняет сторонний код в доверенной среде; проверка integrity фиксирует архив, но не доказывает безопасность его поведения.",
+      "evidence": [
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 2119,
+          "end_line": 2127,
+          "fact": "Запись buildcheck не содержит license."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 2383,
+          "end_line": 2396,
+          "fact": "cpu-features помечен optional, содержит hasInstallScript и не содержит license."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 5026,
+          "end_line": 5042,
+          "fact": "ssh2 содержит hasInstallScript и optional-зависимости cpu-features/nan; поле license отсутствует."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 3268,
+          "end_line": 3289,
+          "fact": "glob имеет предупреждение deprecated и dev=true."
+        },
+        {
+          "path": "electron-app/package-lock.json",
+          "start_line": 3538,
+          "end_line": 3549,
+          "fact": "inflight имеет предупреждение deprecated и dev=true."
+        },
+        {
+          "path": "electron-app/package.json",
+          "start_line": 20,
+          "end_line": 20,
+          "fact": "Для проверки полного и production-дерева предусмотрен отдельный скрипт audit:all; его результат в данном статическом аудите не получался."
+        }
+      ]
+    },
+    {
+      "question": "Может ли runtime-переменная включить режим скриншотов в обычной сборке?",
+      "disposition": "В проверенном пути сборки такой переход не обнаружен: esbuild заменяет обращение main-процесса строковой константой, Vite заменяет соответствующее выражение renderer булевой константой. Оба включают диагностику только при значении '1' в окружении процесса сборки. Потребитель main вызывает настройку защиты до показа окна; ошибка конфигурации уничтожает окно. Renderer показывает диагностическую метку по своей скомпилированной константе. Тесты проверяют обычный и диагностический режим и отказ платформенного вызова, но здесь не запускались.",
+      "evidence": [
+        {
+          "path": "electron-app/scripts/build.mjs",
+          "start_line": 11,
+          "end_line": 20,
+          "fact": "define подставляет литерал для PM_SCREENSHOT_DIAGNOSTICS при сборке main и preload."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 17,
+          "end_line": 19,
+          "fact": "Renderer получает булев литерал диагностики из окружения сборки."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 103,
+          "end_line": 121,
+          "fact": "configureCaptureProtection вызывается до ready-to-show и загрузки UI."
+        },
+        {
+          "path": "electron-app/src/main/services/capture-protection.ts",
+          "start_line": 7,
+          "end_line": 17,
+          "fact": "Функция устанавливает ожидаемое состояние, проверяет isContentProtected и уничтожает окно при ошибке."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 44,
+          "end_line": 44,
+          "fact": "Флаг метки renderer берётся из заменяемого при сборке выражения."
+        },
+        {
+          "path": "electron-app/src/renderer/src/App.vue",
+          "start_line": 471,
+          "end_line": 476,
+          "fact": "Диагностический режим обозначается видимой меткой в заголовке."
+        },
+        {
+          "path": "electron-app/src/main/services/capture-protection.test.ts",
+          "start_line": 9,
+          "end_line": 39,
+          "fact": "Исходник тестов содержит положительные и отрицательные проверки настройки capture protection."
+        }
+      ]
+    },
+    {
+      "question": "Автоматически ли исключены диагностические, неподписанные и тестово подписанные кандидаты из выпуска?",
+      "disposition": "Полный автоматический release gate в назначенных скриптах отсутствует: dist выполняет сборку и упаковку, sign и sign:test являются отдельными командами и используют тот же путь PasswordManager.exe. Выбор диагностического окружения и разделение каталогов остаются ручными. Это ограничение процедуры выпуска, требующее соблюдения правил доверенным оператором. Путь от vault/SSH/renderer-ввода к изменению этой среды или публикации артефакта не установлен. При явно доверенной среде выпуска данный пробел не классифицирован как эксплуатация атакующим. Для будущего выпуска полезен единый gate с очисткой окружения, отдельными каталогами диагностики/тестов, обязательной production-проверкой подписи и проверкой итогового артефакта.",
+      "evidence": [
+        {
+          "path": "electron-app/package.json",
+          "start_line": 9,
+          "end_line": 20,
+          "fact": "Команды сборки, упаковки, тестового и production-подписания раздельны; dist сам не вызывает sign."
+        },
+        {
+          "path": "electron-app/package.json",
+          "start_line": 49,
+          "end_line": 65,
+          "fact": "Настройки по умолчанию используют общий каталог release и имя PasswordManager.exe."
+        },
+        {
+          "path": "electron-app/scripts/build.mjs",
+          "start_line": 11,
+          "end_line": 13,
+          "fact": "Режим main-процесса выбирается окружением доверенной сборки."
+        },
+        {
+          "path": "README.md",
+          "start_line": 7,
+          "end_line": 7,
+          "fact": "Документация прямо обозначает development build и незавершённый полный release gate."
+        },
+        {
+          "path": "README.md",
+          "start_line": 40,
+          "end_line": 40,
+          "fact": "Документация требует отдельного каталога диагностического кандидата и запрещает его выпуск."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 5,
+          "end_line": 5,
+          "fact": "Trusted release worker является доверенной предпосылкой, а не границей изоляции от атакующего."
+        }
+      ]
+    },
+    {
+      "question": "Отказывает ли production-команда подписи при ошибке подписи или недоверенной цепочке?",
+      "disposition": "Да, по статическому пути sign.ps1: обязательны входы среды и существующие файлы, успешный SignTool sign с SHA256 и RFC 3161 /tr, наличие сертификата, его текущий срок действия, Code Signing EKU и сертификат отметки времени. В production-ветке требуются успешный SignTool verify /pa /all /v и Authenticode Status=Valid. TestBuild представляет отдельную явно выбранную ветку с требованием метки Test Build (Untrusted), которая пропускает production-проверку цепочки. Самоподписанный сертификат, которому Windows не доверяет, не удовлетворяет production-ветке. Корневое хранилище доверия, Windows SDK, выбранный PFX и отсутствие подмены файла во время подписи являются доверенными предпосылками; отдельного запрета уже доверенного самоподписанного сертификата или pinning личности подписанта здесь нет. Злоупотребление этими настройками доверенным оператором не выдано за внешнюю атаку.",
+      "evidence": [
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 21,
+          "end_line": 40,
+          "fact": "Скрипт проверяет наличие входов и файлов, выбирает Windows SDK x64 SignTool, подписывает с /fd SHA256 /td SHA256 /tr и проверяет exit code."
+        },
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 46,
+          "end_line": 58,
+          "fact": "Проверяются сертификат подписанта, его срок действия, Code Signing EKU и наличие TimeStamperCertificate."
+        },
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 60,
+          "end_line": 71,
+          "fact": "TestBuild выделен явно; production-ветка требует успешные SignTool verify и Authenticode Valid."
+        },
+        {
+          "path": "SECURITY.md",
+          "start_line": 24,
+          "end_line": 24,
+          "fact": "Среда подписи и Windows входят в заявленные зависимости доверия."
+        },
+        {
+          "path": "SECURITY.md",
+          "start_line": 39,
+          "end_line": 39,
+          "fact": "Политика выпуска требует доверенную Code Signing подпись и RFC 3161 timestamp; самоподписанные сертификаты разрешены только для test builds."
+        }
+      ]
+    },
+    {
+      "question": "Остаётся ли пароль PFX исключительно в переменных окружения?",
+      "disposition": "Нет. Вход действительно читается только из SIGNING_PFX_PASSWORD в Process/User environment, но затем передаётся SignTool через аргумент /p. Обнуление переменной PowerShell в finally не удаляет исходное значение окружения и уже переданные аргументы дочернего процесса. Это отклонение от документированного требования об отсутствии секретов в командной строке. Подтверждённого чтения этих аргументов атакующим за пределами доверенной среды подписи нет; поэтому зарегистрировано ограничение обработки секрета, а не доказанная уязвимость между Windows-аккаунтами. Нужна отдельная проверка политики рабочей станции подписи, журналирования и предпочтительно механизма подписи без передачи пароля PFX в argv. Реальные переменные, процессы подписи и файлы PFX не читались.",
+      "evidence": [
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 12,
+          "end_line": 19,
+          "fact": "Пароль и путь PFX читаются из одноимённых Process/User environment variables."
+        },
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 38,
+          "end_line": 43,
+          "fact": "Пароль передаётся дочернему SignTool аргументом /p; finally присваивает null только локальной переменной pfxPassword."
+        },
+        {
+          "path": "SECURITY.md",
+          "start_line": 37,
+          "end_line": 37,
+          "fact": "Политика запрещает реальные секреты в командных строках."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 15,
+          "end_line": 15,
+          "fact": "Модель описывает путь и пароль сертификата как существующие только в environment values."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 31,
+          "end_line": 31,
+          "fact": "Компрометация среды подписи и привилегированного хоста исключена из гарантий."
+        }
+      ]
+    },
+    {
+      "question": "Полностью ли проверка пути PFX обеспечивает правило «вне репозитория»?",
+      "disposition": "Нет. projectRoot вычисляется как родитель electron-app/scripts, то есть electron-app. Проверка StartsWith запрещает PFX внутри electron-app, но не внутри других каталогов самого репозитория. Это неполная реализация политики размещения сертификата; путь выбирает доверенный оператор через окружение, и сам скрипт не копирует сертификат в репозиторий. Путь от недоверенных продуктовых входов к такому выбору не найден. Политику следует проверять относительно настоящего корня репозитория; текущую проверку нельзя описывать как гарантию для всего репозитория.",
+      "evidence": [
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 10,
+          "end_line": 19,
+          "fact": "База projectRoot является родителем каталога scripts; вход PFX приходит из среды доверенного запуска."
+        },
+        {
+          "path": "electron-app/scripts/sign.ps1",
+          "start_line": 25,
+          "end_line": 30,
+          "fact": "Запрет проверяет только префикс projectRoot с разделителем, затем существование файла."
+        },
+        {
+          "path": "README.md",
+          "start_line": 53,
+          "end_line": 53,
+          "fact": "Документированное правило требует хранить PFX вне всего репозитория."
+        },
+        {
+          "path": "docs/threat-model.md",
+          "start_line": 5,
+          "end_line": 5,
+          "fact": "Настройки и действия доверенного release worker не являются входами внешнего атакующего в данной модели."
+        }
+      ]
+    },
+    {
+      "question": "Попадают ли тестовый Electron harness и его снимки в заявленные входы production-упаковки?",
+      "disposition": "Прямого пути не обнаружено. Main и preload собираются из двух явно заданных production entry points, renderer собирается из src/renderer, а terminal harness получает отдельный root tests/terminal-renderer и outDir .runtime-probe/terminal-renderer. Его фиксированный дочерний запуск получает только путь тестового main.cjs и созданного config JSON; vault/SSH-данные не являются входами скрипта. Пользовательский files whitelist упаковщика перечисляет dist/**/* и package.json, а не tests или .runtime-probe. Сам harness использует executeJavaScript/capturePage только в тестовом процессе. Окончательный архив не исследовался: правило dist/**/* требует чистого доверенного каталога сборки; esbuild перезаписывает два файла и не очищает весь dist, поэтому наличие лишних ранее созданных файлов статически не исключено.",
+      "evidence": [
+        {
+          "path": "electron-app/scripts/build.mjs",
+          "start_line": 18,
+          "end_line": 21,
+          "fact": "Production entry points ограничены src/main/main.ts и src/preload/preload.ts."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 6,
+          "end_line": 8,
+          "fact": "Основной renderer собирается из src/renderer с относительным base."
+        },
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 26,
+          "end_line": 31,
+          "fact": "Vite очищает собственный dist/renderer и отключает sourcemap."
+        },
+        {
+          "path": "electron-app/scripts/test-terminal.mjs",
+          "start_line": 8,
+          "end_line": 22,
+          "fact": "Тестовая сборка использует отдельные root/outDir, фиксированные размеры и фиксированные пути spawn; ELECTRON_RUN_AS_NODE удаляется, exit code проверяется."
+        },
+        {
+          "path": "electron-app/package.json",
+          "start_line": 43,
+          "end_line": 65,
+          "fact": "Настроены ASAR, files=[dist/**/*, package.json] и portable с requestExecutionLevel=user."
+        },
+        {
+          "path": "electron-app/tests/terminal-renderer/main.cjs",
+          "start_line": 21,
+          "end_line": 37,
+          "fact": "executeJavaScript и capturePage находятся в отдельном offscreen тестовом harness, который пишет результаты в config.root."
+        }
+      ]
+    },
+    {
+      "question": "Сохраняет ли renderer-сборка заявленную CSP, и как разграничены проверки TypeScript и тесты?",
+      "disposition": "Vite добавляет CSP meta из общей константы, которую main использует в заголовке ответа. Политика запрещает renderer-сеть, внешние скрипты и frames; unsafe-inline разрешено только для CSS. В production BrowserWindow явно включены sandbox/contextIsolation/webSecurity и отключены nodeIntegration/webviewTag, DevTools зависят от app.isPackaged. Оба tsconfig включают strict и noUncheckedIndexedAccess, а npm build сначала запускает typecheck. Vitest работает с исходными *.test.ts в node-среде отдельной командой; это не проверка готового portable-бинарника. Отсутствие запуска тестов внутри build само по себе не устанавливает обход границы доверия.",
+      "evidence": [
+        {
+          "path": "electron-app/vite.config.ts",
+          "start_line": 4,
+          "end_line": 16,
+          "fact": "HTML получает CSP meta из CONTENT_SECURITY_POLICY."
+        },
+        {
+          "path": "electron-app/src/shared/content-security-policy.ts",
+          "start_line": 1,
+          "end_line": 6,
+          "fact": "Общая CSP допускает self scripts, inline CSS и запрещает connect, object и frame источники."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 65,
+          "end_line": 74,
+          "fact": "Main устанавливает ту же CSP в response header и запрещает разрешения."
+        },
+        {
+          "path": "electron-app/src/main/main.ts",
+          "start_line": 91,
+          "end_line": 100,
+          "fact": "Production-потребитель использует явные параметры sandbox, contextIsolation, webSecurity, nodeIntegration и packaged DevTools."
+        },
+        {
+          "path": "electron-app/tsconfig.json",
+          "start_line": 2,
+          "end_line": 17,
+          "fact": "Renderer/shared TypeScript проверяется в strict-режиме с noUncheckedIndexedAccess."
+        },
+        {
+          "path": "electron-app/tsconfig.node.json",
+          "start_line": 2,
+          "end_line": 14,
+          "fact": "Main/preload/shared имеют отдельный NodeNext strict tsconfig с noUncheckedIndexedAccess."
+        },
+        {
+          "path": "electron-app/package.json",
+          "start_line": 9,
+          "end_line": 14,
+          "fact": "Build запускает typecheck до компиляции; unit- и terminal-тесты вынесены в отдельные команды."
+        },
+        {
+          "path": "electron-app/vitest.config.ts",
+          "start_line": 3,
+          "end_line": 11,
+          "fact": "Vitest запускает src/**/*.test.ts в node-среде без fileParallelism."
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Выполнен только разрешённый offline static review исходников, конфигурации и тестового текста. npm ci, тесты, сборки, packaging, SignTool и приложение не запускались; свойства реального PE/ASAR-артефакта и Windows API не подтверждались экспериментально.",
+    "Актуальные advisory, лицензии содержимого архивов и безопасность стороннего кода не устанавливались сетевыми запросами. Проверка всего lockfile подтверждает структуру записей и согласованность закреплённых метаданных, а не фактические хеши скачанных пакетов.",
+    "Реальные signing inputs, PFX, environment secrets, vault-файлы и runtime-данные не читались. Изоляция и журналирование рабочей станции подписи остаются непроверенными предпосылками; конкретные несоответствия политики отражены в resolved_questions с привязкой к строкам.",
+    "Вывод ограничен девятью назначенными файлами. Поддерживающие исходники читались только для установления потребителей и контрдоказательств; результаты других модулей и история Git не использовались."
+  ]
+}
