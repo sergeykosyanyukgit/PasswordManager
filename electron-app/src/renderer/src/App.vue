@@ -55,6 +55,10 @@ const activeTerminalContrast = computed(() => activeTerminalTab.value
   : 21);
 const currentFolder = computed(() => activeTab.value?.document.folders.find((folder) => folder.id === activeTab.value?.selectedFolderId) ?? null);
 const rootFolder = computed(() => activeTab.value?.document.folders.find((folder) => folder.id === activeTab.value?.document.rootFolderId) ?? null);
+// Keep existing fields and breach confirmation accessible in older or converted notes.
+const showCredentialFields = computed(() => draft.value && draft.value.type !== 4 && (
+  draft.value.type !== 3 || draft.value.userName || draft.value.email || draft.value.password || draft.value.url || draft.value.breach.status === 2
+));
 const visibleRecords = computed(() => {
   if (!activeTab.value) return [];
   const query = search.value.trim().toLocaleLowerCase();
@@ -75,7 +79,7 @@ const breadcrumbs = computed(() => {
   return result;
 });
 
-const labels = ['Login', 'Email', 'Password', 'Secure note', 'SSH'];
+const labels = ['Login', 'Email', 'Password', 'Текстовая заметка', 'SSH'];
 const icons = ['login', 'email', 'password', 'note', 'ssh'];
 
 const activityEvents = ['pointerdown', 'keydown', 'wheel'] as const;
@@ -214,7 +218,7 @@ function changeDraftType(event: Event): void {
 
 async function saveDraft(): Promise<boolean> {
   const tab = activeTab.value;
-  if (!tab || !draft.value || !draft.value.name.trim()) { message.value = 'Введите имя записи.'; return false; }
+  if (!tab || !draft.value || !draft.value.name.trim()) { message.value = draft.value?.type === 3 ? 'Введите название заметки.' : 'Введите имя записи.'; return false; }
   if (draft.value.breach.status === 2 && !draft.value.breach.compromisedSaveConfirmed) {
     message.value = 'Пароль найден в утечках. Отметьте явное подтверждение перед сохранением.'; return false;
   }
@@ -506,6 +510,7 @@ function plainDocument(value: VaultDocument): VaultDocument { return clone(value
       <div class="commandbar">
         <div class="command-group">
           <button class="command-button strong" @click="newRecord(0)"><FluentIcon name="plus" /> Новая запись</button>
+          <button class="command-button" type="button" title="Создать текстовую заметку в выбранной папке" :disabled="busy" @click="newRecord(3)"><FluentIcon name="note" /> Новая заметка</button>
           <button class="command-button" @click="folderDialog = { name: '' }"><FluentIcon name="folder" /> Новая папка</button>
           <span class="separator"></span>
           <button class="command-button" :disabled="!draft" @click="saveDraft"><FluentIcon name="save" /> Сохранить</button>
@@ -532,23 +537,23 @@ function plainDocument(value: VaultDocument): VaultDocument { return clone(value
           <div class="list-head"><span>Имя</span><span>Тип</span><span>Изменено</span><span>Действия</span></div>
           <div v-for="record in visibleRecords" :key="record.id" class="file-row" :class="{ selected: activeTab.selectedRecordId === record.id }">
             <button type="button" class="file-select" @click="selectRecord(record)">
-              <span class="name-cell"><span class="file-icon" :class="`type-${record.type}`"><FluentIcon :name="icons[record.type]!" :size="20" /></span><span><b>{{ record.name }}</b><small>{{ record.userName || record.email || 'Без дополнительного имени' }}</small></span></span>
+              <span class="name-cell"><span class="file-icon" :class="`type-${record.type}`"><FluentIcon :name="icons[record.type]!" :size="20" /></span><span><b>{{ record.name }}</b><small>{{ record.userName || record.email || (record.type === 3 ? 'Текстовая заметка' : 'Без дополнительного имени') }}</small></span></span>
               <span>{{ labels[record.type] }}</span><span>{{ new Date(record.modifiedUtc).toLocaleDateString('ru-RU') }}</span>
             </button>
             <span class="file-actions">
               <button v-if="record.type === 4 && record.ssh" type="button" class="secondary-button compact" :disabled="busy" title="Открыть SSH по сохранённым данным записи" :aria-label="`Открыть SSH-терминал: ${record.name}`" @click="openSavedTerminal(record.id)"><FluentIcon name="ssh" :size="16" /> SSH</button>
             </span>
           </div>
-          <div v-if="visibleRecords.length === 0" class="empty-folder"><FluentIcon name="folder" :size="42" /><b>Эта папка пуста</b><span>Создайте запись или вложенную папку.</span></div>
+          <div v-if="visibleRecords.length === 0" class="empty-folder"><FluentIcon name="folder" :size="42" /><b>Эта папка пуста</b><span>Создайте запись, заметку или вложенную папку.</span></div>
           <footer class="statusbar"><span>{{ visibleRecords.length }} элементов</span><span v-if="busy" class="busy-dot">Выполняется…</span><span v-else>{{ message }}</span></footer>
         </section>
 
         <aside class="details-pane">
           <template v-if="draft">
-            <div class="details-title"><span class="large-file-icon" :class="`type-${draft.type}`"><FluentIcon :name="icons[draft.type]!" :size="26" /></span><div><span class="pane-label">ЗАПИСЬ</span><h2>{{ draft.name || 'Новая запись' }}</h2></div></div>
+            <div class="details-title"><span class="large-file-icon" :class="`type-${draft.type}`"><FluentIcon :name="icons[draft.type]!" :size="26" /></span><div><span class="pane-label">{{ draft.type === 3 ? 'ЗАМЕТКА' : 'ЗАПИСЬ' }}</span><h2>{{ draft.name || (draft.type === 3 ? 'Новая заметка' : 'Новая запись') }}</h2></div></div>
             <label>Тип<select :value="draft.type" @change="changeDraftType"><option v-for="(label, index) in labels" :key="label" :value="index">{{ label }}</option></select></label>
-            <label>Имя<input v-model="draft.name" maxlength="512" autocomplete="off" /></label>
-            <template v-if="draft.type !== 4">
+            <label>{{ draft.type === 3 ? 'Название' : 'Имя' }}<input v-model="draft.name" maxlength="512" autocomplete="off" /></label>
+            <template v-if="showCredentialFields">
               <label>Логин<input v-model="draft.userName" autocomplete="off" /></label>
               <label>Email<input v-model="draft.email" type="email" autocomplete="off" /></label>
               <label>Пароль<div class="field-with-action"><input v-model="draft.password" :type="revealPassword ? 'text' : 'password'" autocomplete="new-password" /><button @click="revealPassword = !revealPassword">{{ revealPassword ? 'Скрыть' : 'Показать' }}</button><button title="Копировать" @click="copy(draft.password)"><FluentIcon name="copy" :size="16" /></button></div></label>
@@ -556,7 +561,7 @@ function plainDocument(value: VaultDocument): VaultDocument { return clone(value
               <label v-if="draft.breach.status === 2" class="danger-confirm"><input v-model="draft.breach.compromisedSaveConfirmed" type="checkbox" /> Я понимаю риск и всё равно сохраняю пароль</label>
               <label>Сайт<input v-model="draft.url" autocomplete="off" /></label>
             </template>
-            <label>Заметка<textarea v-model="draft.notes" rows="5"></textarea></label>
+            <label>{{ draft.type === 3 ? 'Текст заметки' : 'Заметка' }}<textarea v-model="draft.notes" :rows="draft.type === 3 ? 14 : 5" :class="{ 'note-editor': draft.type === 3 }" maxlength="16777216" spellcheck="false" autocomplete="off"></textarea></label>
             <div v-if="draft.type === 4 && draft.ssh" class="ssh-panel">
               <div class="pane-label">SSH-ПОДКЛЮЧЕНИЕ</div>
               <div class="ssh-address-row"><label>Хост<input v-model="draft.ssh.host" autocomplete="off" /></label><label>Порт<input v-model.number="draft.ssh.port" type="number" min="1" max="65535" /></label></div>

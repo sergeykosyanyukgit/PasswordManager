@@ -21,6 +21,10 @@ npm start
 
 The current test suite covers authenticated round trips, fresh ciphertext, header/ciphertext mutations, wrong passwords, writer exclusion, and source-conflict preservation using synthetic data.
 
+## Text notes
+
+Select a vault folder, click **Новая заметка**, enter a title and multiline text, then click **Сохранить**. Notes appear in the selected folder alongside other records; select a note to edit it or use **Удалить** to remove it. The title and text stay inside the encrypted vault using the existing secure-note record format. Existing notes with login or password fields retain access to those fields and any required breach confirmation.
+
 ## SSH terminal
 
 Create or select an SSH record, fill in host, port, user and either a password or an Ed25519/ECDSA OpenSSH/PEM private key, then press **Open terminal**. Password records support both the SSH `password` method and one hidden `keyboard-interactive` password prompt used by many PAM-based servers; arbitrary multi-prompt challenges are not answered automatically. RSA and DSA client keys are rejected in v1 to prevent legacy authentication-signature fallback. The privileged main process shows a native confirmation before every connection. On first contact it separately shows the server's SHA-256 host-key fingerprint; verify it out of band before accepting it. The fingerprint is saved inside the encrypted vault, cannot be replaced by renderer data, and a later mismatch blocks the connection.

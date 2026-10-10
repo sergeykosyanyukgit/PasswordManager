@@ -144,7 +144,7 @@ button:disabled { opacity: .48; pointer-events: none; }
   background: #fafafa;
   border-bottom: 1px solid var(--border);
 }
-.command-group { display: flex; align-items: center; gap: 3px; }
+.command-group { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
 .command-button { height: 34px; padding: 0 10px; background: transparent; border-color: transparent; font-size: 12px; }
 .command-button.strong { color: #075c9f; font-weight: 600; }
 .separator { width: 1px; height: 22px; margin: 0 4px; background: var(--border); }
@@ -273,6 +273,7 @@ button:disabled { opacity: .48; pointer-events: none; }
 }
 .details-pane input:focus, .details-pane select:focus, .details-pane textarea:focus, .modal input:focus { border-bottom: 2px solid var(--accent); outline: none; }
 .details-pane textarea { resize: vertical; line-height: 1.45; }
+.details-pane .note-editor { min-height: 260px; line-height: 1.6; }
 .field-with-action { display: flex; align-items: stretch; }
 .field-with-action input { min-width: 0; border-radius: 4px 0 0 4px; }
 .field-with-action button { padding: 0 8px; border: 1px solid #c8c8c8; border-left: 0; background: #f6f6f6; font-size: 11px; }
