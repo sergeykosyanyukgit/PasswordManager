@@ -1,22 +1,27 @@
 {
-  "name": "passwordmanager",
+  "name": "mynotes",
+  "productName": "MyNotes",
   "version": "1.0.0",
   "private": true,
   "description": "Portable encrypted local vault for Windows",
   "main": "dist/main/main.cjs",
   "type": "module",
   "scripts": {
-    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
+    "build": "npm run typecheck && npm run build:icons && npm run build:renderer && npm run build:electron",
+    "build:icons": "node scripts/generate-icon.mjs",
     "build:renderer": "vite build",
     "build:electron": "node scripts/build.mjs",
     "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run --config vitest.config.ts",
     "test:terminal": "node scripts/test-terminal.mjs",
+    "test:history": "node scripts/test-history.mjs",
+    "test:notes": "node scripts/test-notes.mjs",
+    "test:build-proxy": "node --test scripts/build-proxy.test.mjs",
     "start": "electron .",
     "dist": "npm run build && electron-builder --win portable --x64",
     "dist:installer": "npm run build && electron-builder --win nsis --x64",
-    "sign": "pwsh -NoProfile -File scripts/sign.ps1 -Executable release/PasswordManager.exe",
-    "sign:test": "pwsh -NoProfile -File scripts/sign.ps1 -Executable release/PasswordManager.exe -TestBuild",
+    "sign": "pwsh -NoProfile -File scripts/sign.ps1 -Executable release/MyNotes.exe",
+    "sign:test": "pwsh -NoProfile -File scripts/sign.ps1 -Executable release/MyNotes.exe -TestBuild",
     "audit:all": "npm audit && npm audit --omit=dev"
   },
   "dependencies": {
@@ -40,9 +45,14 @@
     "vitest": "4.1.11",
     "vue-tsc": "3.3.11"
   },
+  "overrides": {
+    "@electron/get": {
+      "global-agent": "4.1.3"
+    }
+  },
   "build": {
-    "appId": "local.passwordmanager.desktop",
-    "productName": "PasswordManager",
+    "appId": "local.mynotes.desktop",
+    "productName": "MyNotes",
     "asar": true,
     "npmRebuild": false,
     "compression": "maximum",
@@ -58,14 +68,14 @@
         "portable"
       ],
       "icon": "build/icon.ico",
-      "artifactName": "PasswordManager.exe"
+      "artifactName": "MyNotes.exe"
     },
     "portable": {
-      "artifactName": "PasswordManager.exe",
+      "artifactName": "MyNotes.exe",
       "requestExecutionLevel": "user"
     },
     "nsis": {
-      "artifactName": "PasswordManager-Setup.exe",
+      "artifactName": "MyNotes-Setup.exe",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "runAfterFinish": false

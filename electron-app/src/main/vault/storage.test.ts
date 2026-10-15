@@ -26,6 +26,13 @@ function store(): VaultStore {
 }
 
 describe('vault storage', () => {
+  it('releases the writer lock when password validation fails during creation', async () => {
+    const path = await testPath();
+    const vaultStore = store();
+    await expect(vaultStore.create(path, 'Synth7!')).rejects.toThrow();
+    const created = await vaultStore.create(path, SYNTHETIC_PASSWORD);
+    expect(created.sessionId).toBeTruthy();
+  });
   it('creates, saves, closes, and reopens a vault', async () => {
     const path = await testPath();
     const first = store();

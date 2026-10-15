@@ -33,7 +33,7 @@ export async function checkPwnedPassword(password: string): Promise<HibpResult> 
 
 function requestRange(prefix: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const req = request({ hostname: 'api.pwnedpasswords.com', port: 443, method: 'GET', path: `/range/${prefix}`, headers: { 'Add-Padding': 'true', Accept: 'text/plain', 'User-Agent': 'PasswordManager/1.0' }, timeout: 10_000 }, (response) => {
+    const req = request({ hostname: 'api.pwnedpasswords.com', port: 443, method: 'GET', path: `/range/${prefix}`, headers: { 'Add-Padding': 'true', Accept: 'text/plain', 'User-Agent': 'MyNotes/1.0' }, timeout: 10_000 }, (response) => {
       if (response.statusCode !== 200 || response.headers.location) { response.resume(); reject(new Error('HIBP rejected.')); return; }
       const declared = Number(response.headers['content-length'] ?? 0);
       if (declared > MAXIMUM_RESPONSE_BYTES) { response.destroy(); reject(new Error('HIBP response too large.')); return; }

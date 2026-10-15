@@ -1,9 +1,9 @@
-# PasswordManager repository rules
+# MyNotes repository rules
 
 ## Scope and platform
 
 - The active application lives in `electron-app/` and uses Node.js, TypeScript, Electron, Vue 3, and a sandboxed renderer. The older .NET/WPF tree is retained only as a format-compatibility reference and is not shipped.
-- Build a Windows-only portable vault for Windows 10 22H2 and Windows 11 x64. The distribution directory contains one `PasswordManager.exe` and requires no installation.
+- Build a Windows-only portable vault for Windows 10 22H2 and Windows 11 x64. The distribution directory contains one `MyNotes.exe` and requires no installation.
 - The product protects a copied or stolen locked vault and detects tampering. It does not claim to resist malware, administrators, process dumps, cameras, or hardware capture on an unlocked host.
 - Describe the scheme as AES-256-GCM with Argon2id. Never market it as “512-bit encryption”.
 
@@ -47,7 +47,8 @@ Use `npm --prefix electron-app run dist` for a portable candidate. Security-sens
 - Tests and documentation use unmistakably synthetic values such as `Synthetic-Test-Password-Only!42`.
 - Never pass real passwords or user data to HIBP MCP, search, Codex, or other tools. MCP checks may use only public synthetic five-character SHA-1 prefixes.
 - Application HIBP requests may contain only the first five uppercase SHA-1 hex characters and must set `Add-Padding: true`. Never log the prefix, suffix, full hash, or password.
-- Do not add telemetry, crash upload, recent-file persistence, analytics, or automatic network calls.
+- Do not add telemetry, crash upload, analytics, or automatic network calls.
+- The user-requested recent-vault history is an exception: persist only file paths, last-opened timestamps, and list order in the main process, never decrypted vault names/content or credentials. Removing an entry must never delete its vault file.
 - Signing inputs come only from `SIGNING_PFX_PATH` and `SIGNING_PFX_PASSWORD`. Never echo either. Keep `*.pfx` and signing material outside the repository.
 
 ## Storage, SSH, and terminal boundaries

@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { copyFile } from 'node:fs/promises';
 
 const shared = {
   bundle: true,
@@ -17,5 +18,8 @@ const shared = {
 
 await Promise.all([
   build({ ...shared, entryPoints: ['src/main/main.ts'], outfile: 'dist/main/main.cjs', format: 'cjs' }),
-  build({ ...shared, entryPoints: ['src/preload/preload.ts'], outfile: 'dist/preload/preload.cjs', format: 'cjs' })
+  build({ ...shared, entryPoints: ['src/preload/preload.ts'], outfile: 'dist/preload/preload.cjs', format: 'cjs' }),
+  build({ ...shared, entryPoints: ['src/preload/notes-preload.ts'], outfile: 'dist/preload/notes-preload.cjs', format: 'cjs' })
 ]);
+await copyFile('build/icon.ico', 'dist/icon.ico');
+await copyFile('dist/renderer/index.html', 'dist/renderer/notes.html');

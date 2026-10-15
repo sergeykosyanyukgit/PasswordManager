@@ -1,5 +1,6 @@
 import { createApp } from 'vue';
 import App from './App.vue';
+import NotesEditor from './NotesEditor.vue';
 import './styles.css';
 
-createApp(App).mount('#app');
+createApp(location.pathname === '/notes.html' ? NotesEditor : App).mount('#app');

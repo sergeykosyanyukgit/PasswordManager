@@ -24,10 +24,12 @@ interface VaultSession {
   sourceHash: Buffer;
   material: VaultMaterial;
   document: VaultDocument;
+  revision: number;
 }
 
 export class VaultStore {
   private readonly sessions = new Map<string, VaultSession>();
+  private readonly operations = new Map<string, Promise<unknown>>();
 
   async open(path: string, password: string): Promise<VaultSnapshot> {
     const vaultPath = await canonicalVaultPath(path, true);
@@ -59,8 +61,9 @@ export class VaultStore {
     }
     const lock = await acquireLock(vaultPath);
     const document = createEmptyDocument();
-    const material = await createMaterial(password);
+    let material: VaultMaterial | undefined;
     try {
+      material = await createMaterial(password);
       const bytes = encodeVault(document, material);
       try {
         await createNewAtomically(vaultPath, bytes);
@@ -76,18 +79,48 @@ export class VaultStore {
         bytes.fill(0);
       }
     } catch (error) {
-      disposeMaterial(material);
+      if (material) disposeMaterial(material);
       await releaseLock(lock.handle, lock.path);
       throw error;
     }
   }
 
-  async save(sessionId: string, document: VaultDocument): Promise<void> {
-    const session = this.requireSession(sessionId);
+  getSnapshot(sessionId: string): VaultSnapshot { return snapshot(this.requireSession(sessionId)); }
+
+  async save(sessionId: string, document: VaultDocument, expectedRevision?: number): Promise<VaultSnapshot> {
     validateDocument(document);
-    const safeDocument = structuredClone(document);
-    constrainSshFingerprints(safeDocument, session.document);
-    safeDocument.settings.hibpConsent = session.document.settings.hibpConsent;
+    const requested = structuredClone(document);
+    return this.enqueue(sessionId, async (session) => {
+      if (expectedRevision !== undefined && expectedRevision !== session.revision) throw new Error('Vault revision conflict.');
+      validateDocument(requested);
+      constrainSshFingerprints(requested, session.document);
+      requested.settings.hibpConsent = session.document.settings.hibpConsent;
+      if (session.document.settings.notesWorkspace) requested.settings.notesWorkspace = structuredClone(session.document.settings.notesWorkspace);
+      else delete requested.settings.notesWorkspace;
+      await this.write(session, requested);
+      return snapshot(session);
+    });
+  }
+
+  mutate(sessionId: string, change: (document: VaultDocument) => void): Promise<VaultSnapshot> {
+    return this.enqueue(sessionId, async (session) => {
+      const document = structuredClone(session.document);
+      change(document);
+      await this.write(session, document);
+      return snapshot(session);
+    });
+  }
+
+  private enqueue<T>(id: string, operation: (session: VaultSession) => Promise<T>): Promise<T> {
+    const result = (this.operations.get(id) ?? Promise.resolve()).catch(() => undefined).then(() => operation(this.requireSession(id)));
+    this.operations.set(id, result);
+    const cleanup = () => { if (this.operations.get(id) === result) this.operations.delete(id); };
+    void result.then(cleanup, cleanup);
+    return result;
+  }
+
+  private async write(session: VaultSession, safeDocument: VaultDocument): Promise<void> {
+    validateDocument(safeDocument);
     safeDocument.modifiedUtc = new Date().toISOString();
     const bytes = encodeVault(safeDocument, session.material);
     const tempPath = `${session.path}.${randomBytes(16).toString('hex').toUpperCase()}.tmp`;
@@ -110,10 +143,12 @@ export class VaultStore {
       } finally {
         current.fill(0);
       }
+      if (this.sessions.get(session.id) !== session) throw new Error('Vault locked during save.');
       await rename(tempPath, session.path);
       session.sourceHash.fill(0);
       session.sourceHash = createHash('sha256').update(bytes).digest();
       session.document = safeDocument;
+      session.revision++;
     } finally {
       bytes.fill(0);
       await unlink(tempPath).catch(() => undefined);
@@ -128,13 +163,11 @@ export class VaultStore {
 
   async setSshHostKey(sessionId: string, recordId: string, fingerprint: string): Promise<void> {
     if (!/^SHA256:[A-Za-z0-9+/]{43}$/u.test(fingerprint)) throw new Error('Invalid SSH host-key fingerprint.');
-    const session = this.requireSession(sessionId);
-    const record = session.document.records.find((item) => item.id === recordId);
-    if (record?.type !== 4 || !record.ssh || record.isDeleted) throw new Error('SSH record is unavailable.');
-    const previous = record.ssh.hostKeySha256;
-    record.ssh.hostKeySha256 = fingerprint;
-    try { await this.save(sessionId, structuredClone(session.document)); }
-    catch (error) { record.ssh.hostKeySha256 = previous; throw error; }
+    await this.mutate(sessionId, (document) => {
+      const record = document.records.find((item) => item.id === recordId);
+      if (record?.type !== 4 || !record.ssh || record.isDeleted) throw new Error('SSH record is unavailable.');
+      record.ssh.hostKeySha256 = fingerprint;
+    });
   }
 
   hasHibpConsent(sessionId: string): boolean {
@@ -142,17 +175,15 @@ export class VaultStore {
   }
 
   async grantHibpConsent(sessionId: string): Promise<void> {
-    const session = this.requireSession(sessionId);
-    if (session.document.settings.hibpConsent) return;
-    session.document.settings.hibpConsent = true;
-    try { await this.save(sessionId, structuredClone(session.document)); }
-    catch (error) { session.document.settings.hibpConsent = false; throw error; }
+    if (this.requireSession(sessionId).document.settings.hibpConsent) return;
+    await this.mutate(sessionId, (document) => { document.settings.hibpConsent = true; });
   }
 
   async close(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.sessions.delete(sessionId);
+    await this.operations.get(sessionId)?.catch(() => undefined);
     clearDocument(session.document);
     disposeMaterial(session.material);
     session.sourceHash.fill(0);
@@ -170,7 +201,7 @@ export class VaultStore {
   }
 
   private addSession(path: string, lock: { handle: FileHandle; path: string }, sourceHash: Buffer, material: VaultMaterial, document: VaultDocument): VaultSession {
-    const session = { id: randomUUID(), path, lockPath: lock.path, lockHandle: lock.handle, sourceHash, material, document };
+    const session = { id: randomUUID(), path, lockPath: lock.path, lockHandle: lock.handle, sourceHash, material, document, revision: 0 };
     this.sessions.set(session.id, session);
     return session;
   }
@@ -261,7 +292,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 function snapshot(session: VaultSession): VaultSnapshot {
-  return { sessionId: session.id, path: session.path, displayName: basename(session.path, '.pmvault'), document: structuredClone(session.document) };
+  return { revision: session.revision, sessionId: session.id, path: session.path, displayName: basename(session.path, '.pmvault'), document: structuredClone(session.document) };
 }
 
 function clearDocument(document: VaultDocument): void {

@@ -1,4 +1,4 @@
-# PasswordManager v1 threat model
+# MyNotes v1 threat model
 
 ## Assets and actors
 
@@ -13,10 +13,12 @@ The primary user is the signed-in Windows account owner. Relevant attackers are:
 5. Terminal bytes cross a bounded IPC event boundary to embedded xterm.js in the already sandboxed application renderer. CSP permits inline CSS required by xterm's generated cell, cursor, selection and truecolor styles, but blocks inline scripts, remote scripts/styles and renderer network connections. Terminal bytes are never inserted as HTML. Navigation/download blocking, disabled packaged DevTools, absence of link/host-object integration, and OSC-52 filtering restrict terminal capabilities. The main-process response header and built HTML share one policy definition.
 6. A secret copied by the user crosses the Windows clipboard boundary with conditional timed clearing. Windows clipboard-history and roaming suppression is not yet implemented in this development build.
 7. Release signing crosses a separate build boundary. The certificate path/password exist only as environment values and the produced executable is verified after signing.
+8. The notes window is a second sandboxed renderer with its own frozen preload. Main-process IPC checks the exact window, main frame, origin and document path. It receives only the titles and text of open note tabs; it cannot use the main window's vault, SSH, clipboard or import methods. Its views disappear before asynchronous vault shutdown. Pending unlocks cannot reopen either renderer after a system lock.
+9. TXT imports cross a read-only filesystem boundary through a native chooser or real dropped files resolved in the preload. Main-process validation bounds file count, paths, encoding, individual size and total size, rejects binary or changed files, and commits a batch through authenticated storage. Imported text is displayed as plain text. Source TXT files remain outside the vault and are never deleted by import.
 
 ## High-priority scenarios and controls
 
-- Offline guessing: Argon2id raises cost; a 15-character minimum and local strength feedback reduce weak choices. There is intentionally no recovery path.
+- Offline guessing: Argon2id raises cost; the user-requested minimum is eight characters after NFC normalization. Short or predictable choices remain easier to guess, and local strength feedback does not guarantee resistance. There is intentionally no recovery path.
 - Vault tampering/mix-and-match: independent GCM authentication plus AAD-bound VaultId/header fields rejects changes, truncation, cross-vault key material, and mixed saves.
 - Resource exhaustion: file, header, ciphertext, JSON, KDF, response, message, and folder-depth limits are enforced before allocation or recursive traversal.
 - Lost update/ransomware-style replacement: an exclusive sibling lock and source digest check reject concurrent change. Network reconnection revalidates both; overwrite is never automatic.
@@ -25,6 +27,8 @@ The primary user is the signed-in Windows account owner. Relevant attackers are:
 - UI capture: ordinary builds verify Windows content protection before any secret-bearing top-level window is usable. Failure blocks unlock and SSH. Explicitly requested screenshot diagnostic builds compile `PM_SCREENSHOT_DIAGNOSTICS=1`, allow capture, and display a persistent diagnostic badge; they are excluded from release distribution. Runtime environment, IPC, and vault data cannot enable this exception in ordinary builds.
 - Second-instance path injection: Electron's single-instance channel accepts only bounded, canonicalized existing `.pmvault` paths before forwarding them to the trusted renderer.
 - Terminal renderer escape: local embedded assets only, restrictive CSP, bounded validated IPC, blocked navigation/download/new-window/host objects, no link provider, and consumed OSC-52 sequences.
+- Concurrent note edits: main-owned per-session write queues serialize mutations; full-document saves require the current revision, while note saves compare the previous title/text before replacing either. Conflicts preserve the editor draft and prevent normal window close until it is saved or explicitly discarded. Open-tab IDs and automatic restoration preferences remain inside authenticated ciphertext. System lock immediately discards any remaining unsaved renderer drafts.
+- Folder cycles and import abuse: the main process rejects root-folder moves, self/descendant targets, deleted entries and resulting depth over 64. Imports allow at most 32 TXT files, 16 MiB each and 32 MiB in total, with bounded reads and strict file checks.
 
 ## Residual risks
 
@@ -32,3 +36,7 @@ Valid historical vault rollback cannot be distinguished after a fresh process wi
 
 Repository: PasswordManager
 Version: working-tree
+
+## Recent-vault history
+
+The user-requested history persists only paths, last successful opening times, opaque entry IDs and list order under the local application data directory. These reveal locations and use times outside ciphertext. No decrypted vault names, settings, passwords or payloads enter history. History is untrusted, bounded and strictly validated by the main process. History operations can only replace the fixed metadata file; removing an entry never accesses its vault. Opening a history path still requires normal vault authentication and writer locking. History failure must not invalidate a successful unlock.

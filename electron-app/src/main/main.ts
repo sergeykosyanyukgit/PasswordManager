@@ -8,20 +8,32 @@ import { VaultStore } from './vault/storage.js';
 import { checkPwnedPassword } from './services/hibp.js';
 import { SshTerminalManager } from './services/ssh-terminal.js';
 import { configureCaptureProtection } from './services/capture-protection.js';
+import { VaultHistoryStore } from './services/vault-history.js';
+import { NotesWorkspaceService, noteReferenceSchema } from './services/notes-workspace.js';
+import { addTextImports, moveSchema, moveVaultItem, readTextImports } from './services/vault-items.js';
+import { installWindowBehavior, setEditingContext } from './services/window-behavior.js';
+import { isTrustedRenderer } from './services/ipc-sender.js';
 import { CONTENT_SECURITY_POLICY } from '../shared/content-security-policy.js';
-import type { SshProfile, SshTerminalStartRequest, SshTerminalStartResult } from '../shared/contracts.js';
+import type { SshProfile, SshTerminalStartRequest, SshTerminalStartResult, VaultDocument, VaultSnapshot } from '../shared/contracts.js';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'pmapp', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false } }]);
+app.setName('MyNotes');
 
 const gotLock = app.requestSingleInstanceLock({ paths: safeVaultPaths(process.argv.slice(1)) });
 if (!gotLock) app.quit();
 
 const store = new VaultStore();
+const notes = new NotesWorkspaceService(store, publishSnapshot);
+let notesWindow: BrowserWindow | null = null;
+let notesCloseIntent: 'manual' | 'app' | null = null;
+let notesCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let vaultHistory: VaultHistoryStore;
 const sshTerminals = new SshTerminalManager((channel, event) => mainWindow?.webContents.send(channel, event));
 let mainWindow: BrowserWindow | null = null;
 let lastActivity = Date.now();
 let idleLockRunning = false;
 let quitting = false;
+let lifecycleEpoch = 0;
 const MAXIMUM_TERMINAL_CLIPBOARD_TEXT = 1024 * 1024;
 
 app.on('second-instance', (_event, argv, _cwd, data) => {
@@ -35,7 +47,8 @@ app.on('second-instance', (_event, argv, _cwd, data) => {
 });
 
 app.whenReady().then(async () => {
-  if (process.platform !== 'win32') throw new Error('PasswordManager supports Windows only.');
+  if (process.platform !== 'win32') throw new Error('MyNotes supports Windows only.');
+  vaultHistory = new VaultHistoryStore(join(app.getPath('userData'), 'vault-history.json'));
   await registerLocalProtocol();
   configureSession();
   registerIpc();
@@ -46,7 +59,13 @@ app.whenReady().then(async () => {
   setInterval(() => { void lockIdleVaults().catch(() => undefined); }, 15_000).unref();
 });
 
-app.on('before-quit', () => { quitting = true; void sshTerminals.closeAll(); void store.closeAll(); });
+app.on('before-quit', (event) => {
+  if (!quitting && notesWindow) { event.preventDefault(); requestNotesClose('app'); return; }
+  quitting = true;
+  lifecycleEpoch++;
+  destroyNotesWindow();
+  void sshTerminals.closeAll(); void store.closeAll();
+});
 app.on('window-all-closed', () => app.quit());
 
 async function registerLocalProtocol(): Promise<void> {
@@ -63,6 +82,7 @@ async function registerLocalProtocol(): Promise<void> {
 }
 
 function configureSession(): void {
+  session.defaultSession.on('will-download', (event) => event.preventDefault());
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => callback({
@@ -83,7 +103,8 @@ function createMainWindow(): void {
     minHeight: 640,
     show: false,
     backgroundColor: useDarkTheme ? '#202020' : '#f3f3f3',
-    title: 'PasswordManager',
+    title: 'MyNotes',
+    icon: join(app.getAppPath(), 'dist', 'icon.ico'),
     titleBarStyle: 'hidden',
     titleBarOverlay: useDarkTheme
       ? { color: '#202020', symbolColor: '#f1f1f1', height: 46 }
@@ -109,37 +130,100 @@ function createMainWindow(): void {
     throw error;
   }
   mainWindow.setBackgroundMaterial('mica');
-  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  mainWindow.webContents.on('did-finish-load', () => {
-    const initialPaths = safeVaultPaths(process.argv.slice(1));
-    if (initialPaths.length > 0) mainWindow?.webContents.send('app:open-paths', initialPaths);
-  });
+  installWindowBehavior(mainWindow, (command) => mainWindow?.webContents.send('app:command', command), scheduleNativeClipboardClear);
+  mainWindow.on('close', (event) => { if (!quitting && notesWindow) { event.preventDefault(); requestNotesClose('app'); } });
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => { mainWindow = null; if (!quitting) { void sshTerminals.closeAll(); void store.closeAll(); } });
   void mainWindow.loadURL('pmapp://local/index.html');
 }
 
 function registerIpc(): void {
+  ipcMain.handle('app:startup', trusted(async () => ({ paths: safeVaultPaths(process.argv.slice(1)), history: await vaultHistory.list() })));
   const credentials = z.object({ path: z.string().min(1).max(32_768), password: z.string().max(1_000_000) }).strict();
   const sessionId = z.string().uuid();
   ipcMain.handle('vault:choose-open', trusted(async () => {
-    const result = await dialog.showOpenDialog(mainWindow!, { title: 'Open vault', properties: ['openFile'], filters: [{ name: 'PasswordManager vault', extensions: ['pmvault'] }] });
+    const result = await dialog.showOpenDialog(mainWindow!, { title: 'Открыть хранилище MyNotes', properties: ['openFile'], filters: [{ name: 'Хранилище MyNotes', extensions: ['pmvault'] }] });
     return result.canceled ? null : result.filePaths[0] ?? null;
   }));
   ipcMain.handle('vault:choose-create', trusted(async () => {
-    const result = await dialog.showSaveDialog(mainWindow!, { title: 'Create vault', defaultPath: 'My vault.pmvault', filters: [{ name: 'PasswordManager vault', extensions: ['pmvault'] }] });
+    const result = await dialog.showSaveDialog(mainWindow!, { title: 'Создать хранилище MyNotes', defaultPath: 'Мои заметки.pmvault', filters: [{ name: 'Хранилище MyNotes', extensions: ['pmvault'] }] });
     return result.canceled ? null : result.filePath ?? null;
   }));
-  ipcMain.handle('vault:open', trusted(async (_event, input) => { const value = credentials.parse(input); return store.open(value.path, value.password); }));
-  ipcMain.handle('vault:create', trusted(async (_event, input) => { const value = credentials.parse(input); return store.create(value.path, value.password); }));
-  ipcMain.handle('vault:save', trusted(async (_event, input: unknown) => {
-    if (!input || typeof input !== 'object' || !('sessionId' in input) || !('document' in input)) throw new Error('Invalid save request.');
-    const id = sessionId.parse(input.sessionId);
-    await store.save(id, input.document as never);
+  ipcMain.handle('vault:open', trusted(async (_event, input) => {
+    const epoch = lifecycleEpoch;
+    const value = credentials.parse(input);
+    const snapshot = await store.open(value.path, value.password);
+    try {
+      if (epoch !== lifecycleEpoch || quitting) throw new Error('Unlock cancelled by lock.');
+      await vaultHistory.recordOpened(snapshot.path);
+      if (epoch !== lifecycleEpoch || quitting) throw new Error('Unlock cancelled by lock.');
+      if (notes.restore(snapshot)) showNotesWindow();
+    }
+    catch (error) { forgetNotesVault(snapshot.sessionId); await store.close(snapshot.sessionId); throw error; }
+    return snapshot;
   }));
-  ipcMain.handle('vault:close', trusted(async (_event, input) => { const value = z.object({ sessionId }).strict().parse(input); await sshTerminals.closeByVault(value.sessionId); await store.close(value.sessionId); }));
+  ipcMain.handle('vault:create', trusted(async (_event, input) => {
+    const epoch = lifecycleEpoch;
+    const value = credentials.parse(input);
+    const snapshot = await store.create(value.path, value.password);
+    try {
+      if (epoch !== lifecycleEpoch || quitting) throw new Error('Creation interrupted by lock.');
+      await vaultHistory.recordOpened(snapshot.path);
+      if (epoch !== lifecycleEpoch || quitting) throw new Error('Creation interrupted by lock.');
+    } catch (error) { await store.close(snapshot.sessionId); throw error; }
+    return snapshot;
+  }));
+  ipcMain.handle('history:list', trusted(async () => vaultHistory.list()));
+  ipcMain.handle('history:reorder', trusted(async (_event, input: unknown) => vaultHistory.reorder(input)));
+  ipcMain.handle('history:remove', trusted(async (_event, input: unknown) => vaultHistory.remove(input)));
+  ipcMain.handle('history:sort-recent', trusted(async () => vaultHistory.useRecentOrder()));
+  ipcMain.handle('vault:save', trusted(async (_event, input: unknown) => {
+    const value = z.object({ sessionId, revision: z.number().int().nonnegative(), document: z.unknown() }).strict().parse(input);
+    const snapshot = await store.save(value.sessionId, value.document as VaultDocument, value.revision);
+    publishSnapshot(snapshot);
+    return snapshot;
+  }));
+  ipcMain.handle('vault:snapshot', trusted(async (_event, input) => store.getSnapshot(sessionId.parse(input))));
+  ipcMain.handle('vault:close', trusted(async (_event, input) => { const value = z.object({ sessionId }).strict().parse(input); forgetNotesVault(value.sessionId); await Promise.all([store.close(value.sessionId), sshTerminals.closeByVault(value.sessionId)]); }));
+  ipcMain.handle('notes:open', trusted(async (_event, input) => {
+    const epoch = lifecycleEpoch;
+    const value = z.object({ sessionId, recordId: z.string().uuid().optional() }).strict().parse(input);
+    await notes.open(value.sessionId, value.recordId);
+    if (epoch !== lifecycleEpoch || quitting) { notes.forget(value.sessionId); throw new Error('Notes opening interrupted by lock.'); }
+    store.getSnapshot(value.sessionId); showNotesWindow();
+  }));
+  ipcMain.handle('notes:state', trustedNotes(async () => notes.state()));
+  ipcMain.handle('notes:update', trustedNotes(async (_event, input: unknown) => notes.update(input)));
+  ipcMain.handle('notes:activate', trustedNotes(async (_event, input: unknown) => { await notes.activate(noteReferenceSchema.parse(input)); }));
+  ipcMain.handle('notes:close-tab', trustedNotes(async (_event, input: unknown) => { await notes.closeTab(noteReferenceSchema.parse(input)); }));
+  ipcMain.handle('notes:finish-close', trustedNotes(async () => {
+    const intent = notesCloseIntent;
+    if (!intent) throw new Error('No window close is pending.');
+    if (intent === 'manual') await notes.manualClose();
+    destroyNotesWindow();
+    if (intent === 'app') { quitting = true; app.quit(); }
+  }));
+  ipcMain.handle('notes:cancel-close', trustedNotes(async () => {
+    if (notesCloseTimer) clearTimeout(notesCloseTimer);
+    notesCloseTimer = null; notesCloseIntent = null;
+  }));
+  ipcMain.handle('vault:move-item', trusted(async (_event, input: unknown) => {
+    const value = moveSchema.parse(input);
+    const snapshot = await store.mutate(value.sessionId, (document) => moveVaultItem(document, value));
+    publishSnapshot(snapshot); return snapshot;
+  }));
+  const importTarget = z.object({ sessionId, folderId: z.string().uuid() }).strict();
+  ipcMain.handle('vault:import-text', trusted(async (_event, input: unknown) => {
+    const value = importTarget.parse(input);
+    store.getSnapshot(value.sessionId);
+    const result = await dialog.showOpenDialog(mainWindow!, { title: 'Импорт текстовых документов', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Текстовые документы', extensions: ['txt'] }] });
+    if (result.canceled) return null;
+    return importText(value.sessionId, value.folderId, result.filePaths);
+  }));
+  ipcMain.handle('vault:import-drop', trusted(async (_event, input: unknown) => {
+    const value = importTarget.extend({ paths: z.array(z.string().min(1).max(32_768)).min(1).max(32) }).strict().parse(input);
+    return importText(value.sessionId, value.folderId, value.paths);
+  }));
   ipcMain.handle('hibp:check', trusted(async (_event, input) => {
     const value = z.object({ sessionId, password: z.string().min(1).max(1_000_000) }).strict().parse(input);
     if (!store.hasHibpConsent(value.sessionId)) {
@@ -147,7 +231,7 @@ function registerIpc(): void {
         type: 'question',
         title: 'Проверка пароля в Have I Been Pwned',
         message: 'Разрешить сетевую проверку завершённого пароля?',
-        detail: 'Будут отправлены только первые 5 символов SHA-1. Сам пароль и полный хеш не передаются. Согласие сохранится внутри зашифрованного сейфа.',
+        detail: 'Будут отправлены только первые 5 символов SHA-1. Сам пароль и полный хеш не передаются. Согласие сохранится внутри зашифрованного хранилища.',
         buttons: ['Разрешить проверку', 'Отмена'],
         defaultId: 1,
         cancelId: 1,
@@ -155,6 +239,7 @@ function registerIpc(): void {
       });
       if (consent.response !== 0) return { status: 'failed', occurrenceCount: 0, reason: 'ConsentDeclined' } as const;
       await store.grantHibpConsent(value.sessionId);
+      publishSnapshot(store.getSnapshot(value.sessionId));
     }
     return checkPwnedPassword(value.password);
   }));
@@ -181,8 +266,74 @@ function registerIpc(): void {
     const dark = theme === 'dark';
     mainWindow?.setBackgroundColor(dark ? '#202020' : '#f3f3f3');
     mainWindow?.setTitleBarOverlay({ color: dark ? '#202020' : '#f3f3f3', symbolColor: dark ? '#f1f1f1' : '#202020', height: 46 });
+    notes.theme = theme;
+    notesWindow?.setBackgroundColor(dark ? '#202020' : '#f8f8f8');
+    sendNotesState();
   }));
-  ipcMain.on('app:activity', (event) => { assertTrustedSender(event); lastActivity = Date.now(); });
+  ipcMain.on('app:activity', (event) => { try { assertTrustedSender(event, 'either'); lastActivity = Date.now(); } catch { /* Drop stale or untrusted one-way messages. */ } });
+  ipcMain.on('app:editing-context', (event, input: unknown) => { try { assertTrustedSender(event, 'either'); setEditingContext(event.sender, z.enum(['text', 'terminal', 'none']).parse(input)); } catch { /* No action for stale frames or invalid contexts. */ } });
+}
+
+async function importText(sessionId: string, folderId: string, paths: unknown): Promise<VaultSnapshot> {
+  store.getSnapshot(sessionId);
+  const imports = await readTextImports(paths);
+  const snapshot = await store.mutate(sessionId, (document) => addTextImports(document, folderId, imports));
+  publishSnapshot(snapshot); return snapshot;
+}
+
+function publishSnapshot(snapshot: VaultSnapshot): void {
+  mainWindow?.webContents.send('vault:changed', snapshot);
+  sendNotesState();
+}
+
+function sendNotesState(): void { if (notesWindow && !notesWindow.isDestroyed()) notesWindow.webContents.send('notes:state-changed', notes.state()); }
+
+function showNotesWindow(): void {
+  if (notesWindow) { if (notesWindow.isMinimized()) notesWindow.restore(); notesWindow.show(); notesWindow.focus(); sendNotesState(); return; }
+  const window = new BrowserWindow({ width: 900, height: 720, minWidth: 500, minHeight: 380, show: false,
+    title: 'Заметки — MyNotes', backgroundColor: notes.theme === 'dark' ? '#202020' : '#f8f8f8', icon: join(app.getAppPath(), 'dist', 'icon.ico'),
+    webPreferences: { preload: join(app.getAppPath(), 'dist', 'preload', 'notes-preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false, webSecurity: true, allowRunningInsecureContent: false, devTools: !app.isPackaged }
+  });
+  configureCaptureProtection(window, process.env.PM_SCREENSHOT_DIAGNOSTICS === '1');
+  notesWindow = window;
+  window.setMenu(null);
+  installWindowBehavior(window, (command) => window.webContents.send('app:command', command), scheduleNativeClipboardClear);
+  window.on('close', (event) => { event.preventDefault(); requestNotesClose('manual'); });
+  window.on('closed', () => { if (notesWindow === window) notesWindow = null; });
+  window.once('ready-to-show', () => window.show());
+  void window.loadURL('pmapp://local/notes.html');
+}
+
+function requestNotesClose(intent: 'manual' | 'app'): void {
+  if (!notesWindow) return;
+  if (notesCloseIntent) { if (intent === 'app') notesCloseIntent = 'app'; return; }
+  notesCloseIntent = intent;
+  notesWindow.webContents.send('notes:close-requested');
+  notesCloseTimer = setTimeout(() => { notesCloseIntent = null; notesCloseTimer = null; }, 10_000);
+}
+
+function destroyNotesWindow(): void {
+  if (notesCloseTimer) clearTimeout(notesCloseTimer);
+  notesCloseTimer = null; notesCloseIntent = null;
+  const window = notesWindow; notesWindow = null;
+  window?.destroy(); notes.clear();
+}
+
+function forgetNotesVault(sessionId: string): void {
+  // Remove secret-bearing note views synchronously, before awaiting I/O or SSH shutdown.
+  notes.forget(sessionId);
+  if (!notes.hasSessions) destroyNotesWindow(); else sendNotesState();
+}
+
+function scheduleNativeClipboardClear(): void {
+  setTimeout(async () => {
+    try {
+      const value = await clipboard.readText();
+      if (!value) return;
+      const expected = createHash('sha256').update(value, 'utf8').digest();
+      setTimeout(() => { void clearClipboardIfUnchanged(expected).catch(() => undefined); }, 30_000).unref();
+    } catch { /* Clipboard can be temporarily unavailable; never print its contents. */ }
+  }, 50).unref();
 }
 
 async function startSshTerminal(input: unknown): Promise<SshTerminalStartResult> {
@@ -206,7 +357,7 @@ async function startSshTerminal(input: unknown): Promise<SshTerminalStartResult>
       type: 'warning',
       title: 'Проверка ключа SSH-сервера',
       message: `Первое подключение к ${profile.host}:${profile.port}`,
-      detail: `SHA-256 отпечаток ключа сервера:\n${result.fingerprint}\n\nСверьте отпечаток с администратором сервера. Сохранить его в зашифрованном сейфе и продолжить?`,
+      detail: `SHA-256 отпечаток ключа сервера:\n${result.fingerprint}\n\nСверьте отпечаток с администратором сервера. Сохранить его в зашифрованном хранилище и продолжить?`,
       buttons: ['Доверять и подключиться', 'Отмена'],
       defaultId: 1,
       cancelId: 1,
@@ -216,6 +367,7 @@ async function startSshTerminal(input: unknown): Promise<SshTerminalStartResult>
     const currentProfile = store.getSshProfile(request.vaultSessionId, request.recordId);
     if (!sameSshTarget(profile, currentProfile)) throw new Error('SSH record changed during host-key confirmation.');
     await store.setSshHostKey(request.vaultSessionId, request.recordId, result.fingerprint);
+    publishSnapshot(store.getSnapshot(request.vaultSessionId));
     const approvedPinnedProfile: SshProfile = { ...profile, hostKeySha256: result.fingerprint };
     profile = store.getSshProfile(request.vaultSessionId, request.recordId);
     if (!sameSshTarget(approvedPinnedProfile, profile)) throw new Error('SSH record changed while the host key was being saved.');
@@ -259,19 +411,30 @@ async function confirmSshDestination(profile: SshProfile): Promise<boolean> {
 }
 
 function trusted<T extends unknown[], R>(handler: (event: Electron.IpcMainInvokeEvent, ...args: T) => R | Promise<R>) {
-  return (event: Electron.IpcMainInvokeEvent, ...args: T) => { assertTrustedSender(event); lastActivity = Date.now(); return handler(event, ...args); };
+  return async (event: Electron.IpcMainInvokeEvent, ...args: T) => {
+    try { assertTrustedSender(event); lastActivity = Date.now(); return await handler(event, ...args); }
+    catch { throw new Error('The requested operation could not be completed.'); }
+  };
 }
 
-function assertTrustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): void {
-  const url = new URL(event.senderFrame?.url ?? 'about:blank');
-  if (url.protocol !== 'pmapp:' || url.hostname !== 'local') throw new Error('Untrusted IPC sender.');
+function assertTrustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, role: 'main' | 'notes' | 'either' = 'main'): void {
+  const isMain = isTrustedRenderer(event, mainWindow?.webContents, '/index.html');
+  const isNotes = isTrustedRenderer(event, notesWindow?.webContents, '/notes.html');
+  if (!(role === 'main' ? isMain : role === 'notes' ? isNotes : isMain || isNotes)) throw new Error('Untrusted IPC sender.');
+}
+
+function trustedNotes<T extends unknown[], R>(handler: (event: Electron.IpcMainInvokeEvent, ...args: T) => R | Promise<R>) {
+  return async (event: Electron.IpcMainInvokeEvent, ...args: T) => {
+    try { assertTrustedSender(event, 'notes'); lastActivity = Date.now(); return await handler(event, ...args); }
+    catch { throw new Error('The requested note operation could not be completed.'); }
+  };
 }
 
 async function lockAll(): Promise<void> {
-  await sshTerminals.closeAll();
-  await store.closeAll();
+  lifecycleEpoch++;
+  destroyNotesWindow();
   mainWindow?.webContents.send('app:lock');
-  await clipboard.clear();
+  await Promise.all([store.closeAll(), sshTerminals.closeAll(), clipboard.clear()]);
 }
 
 async function lockIdleVaults(): Promise<void> {
@@ -280,13 +443,11 @@ async function lockIdleVaults(): Promise<void> {
   try {
     const sessionIds = store.autoLockSessionIds(Date.now() - lastActivity);
     for (const sessionId of sessionIds) {
-      try {
-        try { await sshTerminals.closeByVault(sessionId); }
-        finally {
-          try { await store.close(sessionId); }
-          finally { mainWindow?.webContents.send('app:vault-locked', sessionId); }
-        }
-      } catch { /* Secret-bearing UI is still removed even if lock-file cleanup reports an error. */ }
+      forgetNotesVault(sessionId);
+      mainWindow?.webContents.send('app:vault-locked', sessionId);
+      const closingVault = store.close(sessionId);
+      try { await Promise.all([closingVault, sshTerminals.closeByVault(sessionId)]); }
+      catch { /* Secret-bearing UI was removed before I/O and SSH shutdown. */ }
     }
     if (sessionIds.length > 0) await clipboard.clear();
   } finally {

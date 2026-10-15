@@ -12,7 +12,7 @@ Maintainers should acknowledge a report within seven days, validate it privately
 
 ## Security objective
 
-PasswordManager protects confidentiality and integrity when an attacker obtains, copies, truncates, rolls back, or modifies a locked `.pmvault`. It also prevents accidental password disclosure to the HIBP service, refuses changed SSH host keys, detects concurrent file replacement, and in ordinary builds fails closed when Windows screen-capture exclusion cannot be enabled.
+MyNotes protects confidentiality and integrity when an attacker obtains, copies, truncates, rolls back, or modifies a locked `.pmvault`. It also prevents accidental password disclosure to the HIBP service, refuses changed SSH host keys, detects concurrent file replacement, and in ordinary builds fails closed when Windows screen-capture exclusion cannot be enabled.
 
 User-requested screenshot diagnostic builds are a deliberate exception to screen-capture exclusion. They are compiled separately with `PM_SCREENSHOT_DIAGNOSTICS=1`, visibly identify themselves in the application header, and allow screen capture for UI troubleshooting. They must not be distributed as releases. The build scripts replace this flag with a literal; an ordinary build cannot switch it through runtime environment variables, renderer IPC, or vault settings. Screenshots from diagnostic builds may expose everything visible in the window.
 
@@ -28,10 +28,12 @@ The product does not claim to protect an unlocked process against malware, keylo
 - The SSH boundary uses an explicit modern algorithm policy by default and a pinned SHA-256 host fingerprint. Per-record legacy compatibility requires explicit UI activation and a native warning on every connection, and permits only the documented bounded Group1/SHA-1, DSA, 3DES/AES-CBC, old-MAC, and zlib-compression set. RC4, Blowfish, and CAST remain prohibited. A changed key is a hard failure.
 - The storage boundary uses a writer lock, authenticated encrypted temp, durable flush, authenticated reread, source-version hash check, and atomic replacement. Conflicts are never overwritten.
 - The renderer CSP allows inline CSS for xterm's generated styles and truecolor attributes, while restricting scripts to packaged local assets and blocking external styles and network connections. SSH bytes are parsed by xterm and never inserted as HTML. The shared policy supplies both the main-process response header and the built HTML meta tag.
+- The notes renderer has a separate frozen preload and exact window/frame/document IPC validation. It receives only open notes' titles and text. Both windows use the same capture gate, navigation/download restrictions and native editing shortcuts. Note-tab restoration metadata is encrypted inside the vault; revision checks and serialized writes prevent silent overwrites between editors.
+- TXT import reads only selected or genuinely dropped files, enforces count/size/encoding bounds in the main process and saves the entire batch through authenticated storage. Imported content is rendered as plain text; source TXT files remain unchanged and unencrypted at their original locations.
 
 ## Mandatory invariants
 
-1. No plaintext vault metadata or payload is written outside authenticated ciphertext.
+1. No plaintext vault metadata or payload is written outside authenticated ciphertext, except the explicitly requested recent-vault history: file paths, opening timestamps, and list order in the local application data directory. It contains no decrypted names, settings, credentials, or vault contents. This history reveals vault locations and usage times to the local account and is treated as untrusted input.
 2. No custom cryptographic primitive is accepted. Nonce reuse under the same key is forbidden.
 3. Authentication failure, unknown version, unsafe KDF setting, oversized length, or malformed input must not change the source file.
 4. Real secrets never appear in logs, test fixtures, crash uploads, telemetry, command lines, MCP prompts, or temporary key files.

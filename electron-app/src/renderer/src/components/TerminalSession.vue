@@ -89,16 +89,16 @@ onMounted(async () => {
   terminal.parser.registerOscHandler(1, () => true);
   terminal.parser.registerOscHandler(2, () => true);
   terminalDisposables.push(terminal.onData((data) => {
-    if (connected) void window.passwordManager.writeSshTerminal(props.terminalId, data).catch(() => markClosed('Ошибка отправки данных.'));
+    if (connected) void window.myNotes.writeSshTerminal(props.terminalId, data).catch(() => markClosed('Ошибка отправки данных.'));
   }));
   terminal.attachCustomKeyEventHandler(handleTerminalKey);
-  removeDataListener = window.passwordManager.onSshTerminalData((event) => {
+  removeDataListener = window.myNotes.onSshTerminalData((event) => {
     if (event.terminalId === props.terminalId) terminal?.write(event.data);
   });
-  removeClosedListener = window.passwordManager.onSshTerminalClosed((event) => {
+  removeClosedListener = window.myNotes.onSshTerminalClosed((event) => {
     if (event.terminalId === props.terminalId) markClosed(event.reason === 'error' ? 'SSH-соединение прервано.' : 'SSH-соединение закрыто.');
   });
-  removeSelectAllListener = window.passwordManager.onSshTerminalSelectAll((terminalId) => {
+  removeSelectAllListener = window.myNotes.onSshTerminalSelectAll((terminalId) => {
     if (terminalId === props.terminalId) terminal?.selectAll();
   });
   resizeObserver = new ResizeObserver(() => { if (props.active) void fitAndResize(); });
@@ -131,7 +131,7 @@ onBeforeUnmount(() => {
   removeSelectAllListener();
   resizeObserver?.disconnect();
   for (const disposable of terminalDisposables) disposable.dispose();
-  void window.passwordManager.closeSshTerminal(props.terminalId).catch(() => undefined);
+  void window.myNotes.closeSshTerminal(props.terminalId).catch(() => undefined);
   terminal?.dispose();
   terminal = null;
   fitAddon = null;
@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
 async function connect(): Promise<void> {
   if (!terminal || disposed) return;
   try {
-    const result = await window.passwordManager.startSshTerminal({
+    const result = await window.myNotes.startSshTerminal({
       terminalId: props.terminalId,
       vaultSessionId: props.vaultSessionId,
       recordId: props.recordId,
@@ -164,7 +164,7 @@ async function connect(): Promise<void> {
       return;
     }
     if (disposed) {
-      await window.passwordManager.closeSshTerminal(props.terminalId).catch(() => undefined);
+      await window.myNotes.closeSshTerminal(props.terminalId).catch(() => undefined);
       return;
     }
     connected = true;
@@ -207,7 +207,7 @@ async function fitAndResize(): Promise<void> {
   if (!props.active || !terminal || !fitAddon || !fitHost.value || fitHost.value.clientWidth === 0 || fitHost.value.clientHeight === 0) return;
   try {
     fitAddon.fit();
-    if (connected) await window.passwordManager.resizeSshTerminal(props.terminalId, terminal.cols, terminal.rows);
+    if (connected) await window.myNotes.resizeSshTerminal(props.terminalId, terminal.cols, terminal.rows);
   } catch {
     // A resize can race with a remote disconnect; the close event supplies the visible state.
   }
@@ -227,7 +227,7 @@ function handleTerminalKey(event: KeyboardEvent): boolean {
   if (event.type !== 'keydown' || !terminal) return true;
   const key = event.key.toLowerCase();
   if (event.ctrlKey && !event.altKey && key === 'c' && terminal.hasSelection()) {
-    void window.passwordManager.copySecret(terminal.getSelection(), props.clipboardClearSeconds);
+    void window.myNotes.copySecret(terminal.getSelection(), props.clipboardClearSeconds);
     return false;
   }
   if (event.ctrlKey && event.shiftKey && key === 'a') {
@@ -243,7 +243,7 @@ function handleTerminalKey(event: KeyboardEvent): boolean {
 
 function showContextMenu(): void {
   const selection = terminal?.getSelection().slice(0, 1024 * 1024) ?? '';
-  void window.passwordManager.showSshTerminalContextMenu(props.terminalId, selection, props.clipboardClearSeconds);
+  void window.myNotes.showSshTerminalContextMenu(props.terminalId, selection, props.clipboardClearSeconds);
 }
 
 </script>

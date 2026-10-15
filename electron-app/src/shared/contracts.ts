@@ -58,15 +58,50 @@ export interface VaultDocument {
     clipboardClearSeconds: number;
     autoLockMinutes: number;
     sessionLanguage: string;
+    notesWorkspace?: NotesWorkspace;
   };
   modifiedUtc: string;
 }
 
 export interface VaultSnapshot {
+  revision: number;
   sessionId: string;
   path: string;
   displayName: string;
   document: VaultDocument;
+}
+
+export interface NotesWorkspace {
+  openRecordIds: string[];
+  activeRecordId: string | null;
+  autoOpen: boolean;
+}
+
+export interface NoteView {
+  sessionId: string;
+  recordId: string;
+  title: string;
+  text: string;
+}
+
+export interface NotesViewState { tabs: NoteView[]; activeKey: string | null; theme: 'light' | 'dark' }
+export interface NoteUpdate extends NoteView { baseTitle: string; baseText: string }
+export type AppCommand = 'save' | 'open' | 'new-note' | 'new-folder' | 'close-tab' | 'next-tab' | 'previous-tab' | 'find';
+export type EditingContext = 'text' | 'terminal' | 'none';
+export interface MoveItem { sessionId: string; kind: 'folder' | 'record'; id: string; targetFolderId: string }
+
+export interface NoteEditorApi {
+  getState(): Promise<NotesViewState>;
+  updateNote(input: NoteUpdate): Promise<NotesViewState>;
+  activateTab(sessionId: string, recordId: string): Promise<void>;
+  closeTab(sessionId: string, recordId: string): Promise<void>;
+  finishClose(): Promise<void>;
+  cancelClose(): Promise<void>;
+  setEditingContext(context: EditingContext): void;
+  notifyActivity(): void;
+  onState(callback: (state: NotesViewState) => void): () => void;
+  onCommand(callback: (command: AppCommand) => void): () => void;
+  onCloseRequested(callback: () => void): () => void;
 }
 
 export interface SshTerminalStartRequest {
@@ -120,12 +155,37 @@ export type HibpResult =
   | { status: 'compromised'; occurrenceCount: number }
   | { status: 'failed'; occurrenceCount: 0; reason: string };
 
-export interface PasswordManagerApi {
+export interface RecentVault {
+  id: string;
+  path: string;
+  lastOpenedUtc: string;
+}
+
+export interface VaultHistory {
+  entries: RecentVault[];
+  order: 'recent' | 'manual';
+  persisted: boolean;
+}
+
+export interface MyNotesApi {
+  getStartupState(): Promise<{ paths: string[]; history: VaultHistory }>;
+  listRecentVaults(): Promise<VaultHistory>;
+  reorderRecentVaults(ids: string[]): Promise<VaultHistory>;
+  removeRecentVault(id: string): Promise<VaultHistory>;
+  sortRecentVaults(): Promise<VaultHistory>;
   chooseVaultToOpen(): Promise<string | null>;
   chooseVaultToCreate(): Promise<string | null>;
   openVault(path: string, password: string): Promise<VaultSnapshot>;
   createVault(path: string, password: string): Promise<VaultSnapshot>;
-  saveVault(sessionId: string, document: VaultDocument): Promise<void>;
+  saveVault(sessionId: string, document: VaultDocument, revision: number): Promise<VaultSnapshot>;
+  getVaultSnapshot(sessionId: string): Promise<VaultSnapshot>;
+  openNotes(sessionId: string, recordId?: string): Promise<void>;
+  importTextFiles(sessionId: string, folderId: string): Promise<VaultSnapshot | null>;
+  importDroppedTextFiles(sessionId: string, folderId: string, files: File[]): Promise<VaultSnapshot>;
+  moveItem(input: MoveItem): Promise<VaultSnapshot>;
+  setEditingContext(context: EditingContext): void;
+  onCommand(callback: (command: AppCommand) => void): () => void;
+  onVaultChanged(callback: (snapshot: VaultSnapshot) => void): () => void;
   closeVault(sessionId: string): Promise<void>;
   checkPassword(sessionId: string, password: string): Promise<HibpResult>;
   copySecret(value: string, clearSeconds: number): Promise<void>;
@@ -147,6 +207,7 @@ export interface PasswordManagerApi {
 
 declare global {
   interface Window {
-    passwordManager: PasswordManagerApi;
+    myNotes: MyNotesApi;
+    noteEditor: NoteEditorApi;
   }
 }

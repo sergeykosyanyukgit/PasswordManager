@@ -43,6 +43,38 @@ beforeAll(async () => {
 afterAll(() => disposeMaterial(material));
 
 describe('pmvault v1 codec', () => {
+  it('keeps legacy payloads compatible and authenticates additive notes workspace settings', () => {
+    const legacy = structuredClone(document);
+    delete legacy.settings.notesWorkspace;
+    const legacyBytes = encodeVault(legacy, material);
+    try { expect(verifyAndDecode(legacyBytes, material).settings.notesWorkspace).toBeUndefined(); }
+    finally { legacyBytes.fill(0); }
+    const updated = structuredClone(document);
+    const id = updated.records[0]!.id;
+    updated.settings.notesWorkspace = { openRecordIds: [id], activeRecordId: id, autoOpen: false };
+    const bytes = encodeVault(updated, material);
+    try {
+      expect(bytes.readUInt16LE(8)).toBe(1);
+      expect(verifyAndDecode(bytes, material).settings.notesWorkspace).toEqual(updated.settings.notesWorkspace);
+      bytes[HEADER_SIZE + 30] = bytes[HEADER_SIZE + 30]! ^ 1;
+      expect(() => verifyAndDecode(bytes, material)).toThrow(VaultAuthenticationError);
+    } finally { bytes.fill(0); }
+  });
+
+  it('rejects malformed and excessive notes tab state before saving', () => {
+    const id = crypto.randomUUID();
+    for (const workspace of [
+      { openRecordIds: [id, id], activeRecordId: id, autoOpen: true },
+      { openRecordIds: [], activeRecordId: id, autoOpen: true },
+      { openRecordIds: ['not-a-uuid'], activeRecordId: null, autoOpen: true },
+      { openRecordIds: [], activeRecordId: null, autoOpen: 'true' },
+      { openRecordIds: Array.from({ length: 129 }, () => crypto.randomUUID()), activeRecordId: null, autoOpen: true },
+      { openRecordIds: [], activeRecordId: null, autoOpen: true, unexpected: true }
+    ]) {
+      const value = structuredClone(document); value.settings.notesWorkspace = workspace as never;
+      expect(() => validateDocument(value)).toThrow(VaultFormatError);
+    }
+  });
   it('round-trips an authenticated, padded document', () => {
     const encoded = encodeVault(document, material);
     try {
@@ -85,8 +117,22 @@ describe('pmvault v1 codec', () => {
     }
   });
 
-  it('rejects a short new master password', async () => {
-    await expect(createMaterial('too-short')).rejects.toBeInstanceOf(VaultFormatError);
+  it.each(['', 'Synth7!'])('rejects a new master password below eight characters', async (password) => {
+    await expect(createMaterial(password)).rejects.toBeInstanceOf(VaultFormatError);
+  });
+
+  it('accepts an eight-character synthetic master password and round trips it', async () => {
+    const shortMaterial = await createMaterial('Synth8!!');
+    const encoded = encodeVault(document, shortMaterial);
+    try {
+      const decoded = await decodeVault(encoded, 'Synth8!!');
+      try { expect(decoded.document).toEqual(document); }
+      finally { disposeMaterial(decoded.material); }
+    } finally { disposeMaterial(shortMaterial); encoded.fill(0); }
+  });
+
+  it('counts a new password after NFC normalization', async () => {
+    await expect(createMaterial('e\u0301Synth!')).rejects.toBeInstanceOf(VaultFormatError);
   });
 
   it('allows disabling inactivity auto-lock but rejects invalid timeouts', () => {

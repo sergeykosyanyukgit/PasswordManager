@@ -55,6 +55,10 @@ At least one 4096-byte block is emitted. Padding bytes have no structure and are
 
 `settings.autoLockMinutes` is an authenticated integer in the inclusive range 0-240. `0` disables inactivity auto-lock for that vault; it does not disable locking on Windows lock, suspend, shutdown, explicit close, or application exit. Older v1 payloads remain compatible because their existing positive value retains the same meaning.
 
+`settings.notesWorkspace` is optional authenticated UI state: `{ openRecordIds: UUID[], activeRecordId: UUID | null, autoOpen: boolean }`. IDs are unique, limited to 128, and a non-null active ID must belong to the list. Unknown fields or wrong types are rejected. A missing field in an older v1 document means no remembered tabs and requires no rewrite to open it. The field is created only when the notes workspace is used. Names and note text remain in the existing record fields; neither tabs nor the manual-close preference are stored outside ciphertext. This additive JSON field does not change the v1 binary header, KDF, AAD or encryption. Current readers continue opening legacy payloads; older readers may ignore this field or fail closed and must not be used to maintain the new workspace state.
+
+Manually closing the notes window sets `autoOpen` to false while retaining the remembered IDs. Explicitly opening notes sets it to true. Vault lock, app exit and system lock close all note views without suppressing restoration at the next unlock. Deleted/non-note records are not restored.
+
 SSH profile payloads include `allowLegacyAlgorithms`, a boolean that defaults to `false`. Readers treat the missing field in an older authenticated v1 payload as `false`, so this additive payload migration preserves v1 binary/AAD compatibility. Non-boolean values are rejected. Enabling the flag is per record and still requires a native warning before every compatibility-mode connection.
 
 ## Saving and migration

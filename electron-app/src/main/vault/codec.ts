@@ -14,6 +14,7 @@ export const HEADER_SIZE = 220;
 export const MAXIMUM_FILE_SIZE = 256 * 1024 * 1024;
 const MAXIMUM_JSON_SIZE = 64 * 1024 * 1024;
 const MAGIC = Buffer.from('PMVAULT1', 'ascii');
+// Historical format constant: preserve it when changing the product name.
 const WRAP_INFO = Buffer.from('PasswordManager/v1/data-key-wrap', 'ascii');
 const OFFSETS = {
   version: 8,
@@ -59,7 +60,7 @@ export function createEmptyDocument(): VaultDocument {
   const rootFolderId = randomUUID();
   return {
     rootFolderId,
-    folders: [{ id: rootFolderId, parentId: null, name: 'Vault', isDeleted: false, deletedUtc: null }],
+    folders: [{ id: rootFolderId, parentId: null, name: 'Заметки', isDeleted: false, deletedUtc: null }],
     records: [],
     settings: { hibpConsent: false, clipboardClearSeconds: 30, autoLockMinutes: 15, sessionLanguage: '' },
     modifiedUtc: new Date().toISOString()
@@ -154,7 +155,7 @@ export function disposeMaterial(material: VaultMaterial): void {
 function parseHeader(fileBytes: Buffer): { vaultId: Buffer; kdfSalt: Buffer; parameters: KdfParameters; ciphertextLength: number } {
   if (fileBytes.length < HEADER_SIZE || fileBytes.length > MAXIMUM_FILE_SIZE) throw new VaultFormatError('Invalid vault size.');
   const header = fileBytes.subarray(0, HEADER_SIZE);
-  if (!header.subarray(0, 8).equals(MAGIC)) throw new VaultFormatError('Not a PasswordManager vault.');
+  if (!header.subarray(0, 8).equals(MAGIC)) throw new VaultFormatError('Not a MyNotes vault.');
   if (header.readUInt16LE(OFFSETS.version) !== 1 || header.readUInt16LE(OFFSETS.suite) !== 1 || header.readInt32LE(OFFSETS.headerLength) !== HEADER_SIZE) {
     throw new VaultFormatError('Unsupported vault version or cipher suite.');
   }
@@ -265,7 +266,7 @@ function validateKdf(parameters: KdfParameters): void {
 }
 
 function validateNewMasterPassword(password: string): void {
-  if (password.normalize('NFC').length < 15) throw new VaultFormatError('Master password must contain at least 15 characters.');
+  if (password.normalize('NFC').length < 8) throw new VaultFormatError('Master password must contain at least 8 characters.');
 }
 
 export function validateDocument(document: VaultDocument): void {
@@ -287,6 +288,14 @@ export function validateDocument(document: VaultDocument): void {
   for (const record of document.records) validateRecord(record, records, folders);
   if (!document.settings || typeof document.settings !== 'object' || typeof document.settings.hibpConsent !== 'boolean' || !Number.isInteger(document.settings.clipboardClearSeconds) || document.settings.clipboardClearSeconds < 5 || document.settings.clipboardClearSeconds > 600 || !Number.isInteger(document.settings.autoLockMinutes) || document.settings.autoLockMinutes < 0 || document.settings.autoLockMinutes > 240 || !['', 'ru', 'en'].includes(document.settings.sessionLanguage)) {
     throw new VaultFormatError('Invalid vault settings.');
+  }
+  const workspace = document.settings.notesWorkspace;
+  if (workspace !== undefined && (!workspace || typeof workspace !== 'object' ||
+      Object.keys(workspace).some((key) => !['openRecordIds', 'activeRecordId', 'autoOpen'].includes(key)) ||
+      !Array.isArray(workspace.openRecordIds) || workspace.openRecordIds.length > 128 ||
+      workspace.openRecordIds.some((id) => !isUuid(id)) || new Set(workspace.openRecordIds).size !== workspace.openRecordIds.length ||
+      (workspace.activeRecordId !== null && !workspace.openRecordIds.includes(workspace.activeRecordId)) || typeof workspace.autoOpen !== 'boolean')) {
+    throw new VaultFormatError('Invalid notes workspace.');
   }
 }
 

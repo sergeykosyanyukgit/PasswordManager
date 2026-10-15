@@ -15,7 +15,7 @@ const violations: string[] = [];
 const checks: string[] = [];
 document.addEventListener('securitypolicyviolation', event => violations.push(event.effectiveDirective));
 const listen = (listeners: Set<any>, callback: any) => { listeners.add(callback); return () => listeners.delete(callback); };
-Object.assign(window, { passwordManager: Object.freeze({
+Object.assign(window, { myNotes: Object.freeze({
   startSshTerminal: async (request: any) => {
     starts.push(request);
     return { status: 'connected', fingerprint: 'SHA256:SyntheticTestFingerprintOnly' };

@@ -8,8 +8,8 @@ defineProps<{ name: string; size?: number }>();
       <path d="M2.75 6.5A2.75 2.75 0 0 1 5.5 3.75h4.08c.73 0 1.43.29 1.94.8l1.2 1.2h5.78a2.75 2.75 0 0 1 2.75 2.75v8A3.75 3.75 0 0 1 17.5 20.25h-11a3.75 3.75 0 0 1-3.75-3.75v-10Z" fill="#D99B22" stroke="#7A5B20" stroke-width="1.2"/>
       <path d="M3.35 8.25h17.3" stroke="#F5C75C" stroke-width="1.4"/>
     </template>
-    <template v-else-if="name === 'vault'">
-      <rect x="3" y="3" width="18" height="18" rx="3.2" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="M12 9.6v2.8l2 1.2M5.2 7.2h1.6M5.2 16.8h1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <template v-else-if="name === 'notebook'">
+      <rect x="5" y="3" width="15" height="18" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M3 7h4M3 12h4M3 17h4M16.5 3v18M9.5 15.5l1-3 4.5-5 2 2-4.5 5-3 1Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </template>
     <template v-else-if="name === 'login'">
       <circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M3.8 19c.5-3.4 2.2-5.2 5.2-5.2 1.7 0 3 .6 3.9 1.8M15 10.5h6M18 7.5v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
